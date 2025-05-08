@@ -56,9 +56,6 @@ type Worker struct {
 	workerChan    chan struct{}
 	// 是否记录每秒统计
 	enableSecondStats bool
-	// 可复用的请求对象
-	reusableReq *http.Request
-	reqMu       sync.Mutex
 }
 
 func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator RequestGenerator, enableSecondStats bool) *Worker {
@@ -73,13 +70,6 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 		maxWorkers = int32(concurrency)
 	}
 
-	reusableReq, err := http.NewRequest("POST", url, nil)
-	if err != nil {
-		fmt.Printf("创建可复用请求对象失败: %v\n", err)
-		return nil
-	}
-	reusableReq.Header.Set("Content-Type", "application/json")
-
 	return &Worker{
 		url:               url,
 		concurrency:       concurrency,
@@ -93,7 +83,6 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 		maxWorkers:        maxWorkers,
 		workerChan:        make(chan struct{}, maxWorkers),
 		enableSecondStats: enableSecondStats,
-		reusableReq:       reusableReq,
 	}
 }
 
@@ -104,19 +93,13 @@ func (w *Worker) makeRequest() {
 		return
 	}
 
-	// 复用请求对象
-	w.reqMu.Lock()
-	// 创建一个新的请求，而不是复用旧的
 	req, err := http.NewRequest("POST", w.url, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		w.reqMu.Unlock()
 		fmt.Printf("创建请求失败: %v\n", err)
 		atomic.AddInt64(&w.stats.FailedRequests, 1)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	w.reusableReq = req
-	w.reqMu.Unlock()
 
 	// 从客户端池获取HTTP客户端
 	client := clientPool.GetClient()
