@@ -23,11 +23,14 @@ func NewSimpleRequestGenerator() *SimpleRequestGenerator {
 func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
 	// 获取当前时间的秒数
 	now := time.Now()
-	second := now.Second()
-	
-	// 计算delay: (当前秒数 / 60) * 15 
-	delay := float64(second) / 60.0 * 15 
-	
+	minute := now.Minute()
+
+	// 计算delay: (当前秒数 / 60) * 15
+	delay := 0
+	if minute%2 == 0 {
+		delay = 15
+	}
+
 	body := map[string]interface{}{"delay_ms": int64(delay)}
 	return json.Marshal(body)
 }
