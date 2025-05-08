@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"sync/atomic"
+	"time"
 )
 
 // RequestGenerator 请求生成器接口
@@ -20,7 +21,14 @@ func NewSimpleRequestGenerator() *SimpleRequestGenerator {
 
 // Generate 生成请求
 func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
-	body := map[string]interface{}{"delay_ms": 10}
+	// 获取当前时间的秒数
+	now := time.Now()
+	second := now.Second()
+	
+	// 计算delay: (当前秒数 / 60) * 15 * 1000
+	delay := float64(second) / 60.0 * 15 * 1000
+	
+	body := map[string]interface{}{"delay_ms": int64(delay)}
 	return json.Marshal(body)
 }
 
