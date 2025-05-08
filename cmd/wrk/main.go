@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -106,15 +105,23 @@ func (w *Worker) makeRequest() {
 
 	// 复用请求对象
 	w.reqMu.Lock()
-	w.reusableReq.Body = io.NopCloser(bytes.NewBuffer(jsonBody))
-	w.reusableReq.ContentLength = int64(len(jsonBody))
+	// 创建一个新的请求，而不是复用旧的
+	req, err := http.NewRequest("POST", w.url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		w.reqMu.Unlock()
+		fmt.Printf("创建请求失败: %v\n", err)
+		atomic.AddInt64(&w.stats.FailedRequests, 1)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	w.reusableReq = req
 	w.reqMu.Unlock()
 
 	// 从客户端池获取HTTP客户端
 	client := clientPool.GetClient()
 
 	start := time.Now()
-	resp, err := client.Do(w.reusableReq)
+	resp, err := client.Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			atomic.AddInt64(&w.stats.TimeoutRequests, 1)
