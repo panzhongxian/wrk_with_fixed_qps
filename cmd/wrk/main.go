@@ -41,7 +41,6 @@ type SecondStats struct {
 }
 
 type Worker struct {
-	client      *http.Client
 	url         string
 	concurrency int
 	duration    time.Duration
@@ -60,25 +59,6 @@ type Worker struct {
 	// 可复用的请求对象
 	reusableReq *http.Request
 	reqMu       sync.Mutex
-}
-
-var sharedTransport = &http.Transport{
-	MaxIdleConns:          1000,
-	MaxIdleConnsPerHost:   100,
-	MaxConnsPerHost:       100,
-	IdleConnTimeout:       60 * time.Second,
-	DisableKeepAlives:     false,
-	DisableCompression:    true,
-	ResponseHeaderTimeout: 20 * time.Second,
-	ExpectContinueTimeout: 2 * time.Second,
-	ForceAttemptHTTP2:     true,
-	DialContext:           DialWithCache,
-	TLSHandshakeTimeout:   10 * time.Second,
-}
-
-var sharedClient = &http.Client{
-	Transport: sharedTransport,
-	Timeout:   10 * time.Second,
 }
 
 func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator RequestGenerator, enableSecondStats bool) *Worker {
@@ -101,7 +81,6 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 	reusableReq.Header.Set("Content-Type", "application/json")
 
 	return &Worker{
-		client:            sharedClient, // 复用全局 http.Client
 		url:               url,
 		concurrency:       concurrency,
 		duration:          duration,
@@ -117,6 +96,7 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 		reusableReq:       reusableReq,
 	}
 }
+
 func (w *Worker) makeRequest() {
 	jsonBody, err := w.generator.Generate()
 	if err != nil {
@@ -129,8 +109,11 @@ func (w *Worker) makeRequest() {
 	w.reusableReq.Body = io.NopCloser(bytes.NewBuffer(jsonBody))
 	w.reqMu.Unlock()
 
+	// 从客户端池获取HTTP客户端
+	client := clientPool.GetClient()
+
 	start := time.Now()
-	resp, err := w.client.Do(w.reusableReq)
+	resp, err := client.Do(w.reusableReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			atomic.AddInt64(&w.stats.TimeoutRequests, 1)
