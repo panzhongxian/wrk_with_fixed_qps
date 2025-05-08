@@ -124,6 +124,13 @@ func (w *Worker) makeRequest() {
 	}
 	defer resp.Body.Close()
 
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("请求返回非200状态码: %d, 请求体: %s\n", resp.StatusCode, string(jsonBody))
+		atomic.AddInt64(&w.stats.FailedRequests, 1)
+		return
+	}
+
 	// 更新基本请求计数
 	atomic.AddInt64(&w.stats.TotalRequests, 1)
 	atomic.AddInt64(&w.stats.TotalBytes, resp.ContentLength)
