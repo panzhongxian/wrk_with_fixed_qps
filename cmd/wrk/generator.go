@@ -25,8 +25,8 @@ func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
 	now := time.Now()
 	second := now.Second()
 	
-	// 计算delay: (当前秒数 / 60) * 15 * 1000
-	delay := float64(second) / 60.0 * 15 * 1000
+	// 计算delay: (当前秒数 / 60) * 15 
+	delay := float64(second) / 60.0 * 15 
 	
 	body := map[string]interface{}{"delay_ms": int64(delay)}
 	return json.Marshal(body)
