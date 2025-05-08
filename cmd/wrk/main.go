@@ -423,53 +423,44 @@ func (w *Worker) PrintStats() {
 }
 
 func main() {
-	var (
-		url               string
-		concurrency       int
-		duration          int
-		timeout           int
-		qps               int
-		maxWorkers        int
-		enableSecondStats bool
-	)
-
-	flag.StringVar(&url, "url", "http://localhost:8080/delay", "测试目标URL")
-	flag.IntVar(&concurrency, "concurrency", 0, "并发数（与qps互斥）")
-	flag.IntVar(&duration, "duration", 30, "测试持续时间(秒)")
-	flag.IntVar(&timeout, "timeout", 5, "请求超时时间(秒)")
-	flag.IntVar(&qps, "qps", 0, "每秒请求数（与concurrency互斥）")
-	flag.IntVar(&maxWorkers, "max-workers", 2000, "QPS模式下的最大并发数")
-	flag.BoolVar(&enableSecondStats, "enable-second-stats", false, "是否记录每秒的统计信息")
+	// 解析命令行参数
+	url := flag.String("url", "", "目标URL")
+	duration := flag.Int("duration", 60, "测试持续时间（秒）")
+	concurrency := flag.Int("concurrency", 1, "并发数")
+	filePath := flag.String("file", "", "输入文件路径，如果指定则使用文件内容作为请求体")
 	flag.Parse()
 
-	// 验证参数
-	if concurrency > 0 && qps > 0 {
-		fmt.Println("错误：concurrency 和 qps 参数不能同时使用")
+	if *url == "" {
+		fmt.Println("请指定目标URL")
+		flag.Usage()
 		return
 	}
-	if concurrency == 0 && qps == 0 {
-		fmt.Println("错误：必须指定 concurrency 或 qps 参数")
-		return
+
+	// 创建请求生成器
+	var generator RequestGenerator
+	var err error
+	if *filePath != "" {
+		generator, err = NewFileGenerator(*filePath)
+		if err != nil {
+			fmt.Printf("创建文件生成器失败: %v\n", err)
+			return
+		}
+	} else {
+		generator = &DelayGenerator{}
 	}
 
 	// 初始化随机数生成器
 	rand.Seed(time.Now().UnixNano())
 
 	// 创建请求生成器
-	generator := NewSimpleRequestGenerator()
+	generator = NewSimpleRequestGenerator()
 
-	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout)*time.Second, qps, generator, enableSecondStats)
-	worker.maxWorkers = int32(maxWorkers)
+	worker := NewWorker(*url, *concurrency, time.Duration(*duration)*time.Second, 5*time.Second, 0, generator, false)
 
-	fmt.Printf("开始压测 %s\n", url)
-	if qps > 0 {
-		fmt.Printf("QPS: %d, 持续时间: %d秒\n", qps, duration)
-		fmt.Printf("最大并发数: %d\n", worker.maxWorkers)
-	} else {
-		fmt.Printf("并发数: %d, 持续时间: %d秒\n", concurrency, duration)
-	}
-	fmt.Printf("请求超时: %d秒\n", timeout)
-	fmt.Printf("每秒统计: %v\n", enableSecondStats)
+	fmt.Printf("开始压测 %s\n", *url)
+	fmt.Printf("并发数: %d, 持续时间: %d秒\n", *concurrency, *duration)
+	fmt.Printf("请求超时: 5秒\n")
+	fmt.Printf("每秒统计: %v\n", false)
 
 	worker.Start()
 	worker.PrintStats()
