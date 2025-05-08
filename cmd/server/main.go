@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"mock_http_server/pkg/counter"
+	"git.woa.com/jasonzxpan/wrk_server/pkg/counter"
 )
 
 type DelayRequest struct {
