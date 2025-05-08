@@ -47,6 +47,8 @@ go build -o wrk cmd/wrk/main.go
 - `--timeout`: 请求超时时间，单位秒（默认：5）
 - `--qps`: 每秒请求数（与 concurrency 互斥）
 - `--max-workers`: QPS 模式下的最大并发数（默认：1000）
+- `--file`: 输入文件路径，如果指定则使用文件内容作为请求体。文件中的每一行将作为一次请求的内容，当读取到文件末尾时会自动从头开始
+- `--enable-second-stats`: 是否记录每秒的统计信息，启用后会生成 stats.csv 文件，包含每秒的请求数、错误数、延迟等详细统计
 
 ### 压测模式
 
@@ -72,6 +74,15 @@ go build -o wrk cmd/wrk/main.go
 - 最大延迟
 - 平均延迟
 - 总传输字节
+
+当启用 `--enable-second-stats` 时，会生成 stats.csv 文件，包含以下信息：
+- 时间点
+- 当秒请求数
+- 错误数量
+- 平均延迟
+- P75 延迟
+- P90 延迟
+- P99 延迟
 
 ### 示例输出
 
