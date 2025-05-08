@@ -11,8 +11,8 @@ import (
 )
 
 type Counter struct {
-	count             int64
-	redisCli          *redis.Client
+	count    int64
+	redisCli *redis.Client
 	// 活跃连接计数
 	activeConnections int64
 	// 并发请求计数
@@ -20,10 +20,10 @@ type Counter struct {
 }
 
 func NewCounter(redisAddr string) (*Counter, error) {
-	os.Getenv("REDIS_PASSWORD")
+	redisPassword := os.Getenv("REDIS_PASSWORD")
 	client := redis.NewClient(&redis.Options{
-		Addr: redisAddr,
-		Password: 
+		Addr:     redisAddr,
+		Password: redisPassword,
 	})
 
 	// 测试Redis连接
@@ -91,9 +91,9 @@ func (c *Counter) StartReporting(ctx context.Context) {
 			timestamp := time.Now().Unix()
 			activeConns := c.GetActiveConnections()
 			concurrentReqs := c.GetConcurrentRequests()
-			
+
 			// 将计数、活跃连接数和并发请求数写入Redis
-			err := c.redisCli.HSet(ctx, "request_counts", 
+			err := c.redisCli.HSet(ctx, "request_counts",
 				fmt.Sprintf("%d_requests", timestamp), count,
 				fmt.Sprintf("%d_connections", timestamp), activeConns,
 				fmt.Sprintf("%d_concurrent", timestamp), concurrentReqs,
