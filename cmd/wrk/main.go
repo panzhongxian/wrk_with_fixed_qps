@@ -333,7 +333,7 @@ func (w *Worker) Start() {
 		defer statsFile.Close()
 
 		// 写入CSV头
-		fmt.Fprintf(statsFile, "timestamp,request_count,error_count,avg_latency,p75_latency,p90_latency,p99_latency\n")
+		fmt.Fprintf(statsFile, "时间点,当秒请求数,错误数量,平均延迟,p75_latency,p90_latency,p99_latency\n")
 	}
 
 	// 启动统计收集器
@@ -371,7 +371,7 @@ func (w *Worker) Start() {
 				case <-statsTicker.C:
 					if stats := w.collectSecondStats(); stats != nil {
 						fmt.Fprintf(statsFile, "%s,%d,%d,%d,%d,%d,%d\n",
-							stats.Timestamp.Format(time.RFC3339),
+							stats.Timestamp.Format("2006-01-02 15:04:05"),
 							stats.RequestCount,
 							stats.ErrorCount,
 							stats.AvgLatency.Milliseconds(),
@@ -394,7 +394,7 @@ func (w *Worker) Start() {
 	if w.enableSecondStats {
 		if stats := w.collectSecondStats(); stats != nil {
 			fmt.Fprintf(statsFile, "%s,%d,%d,%d,%d,%d,%d\n",
-				stats.Timestamp.Format(time.RFC3339),
+				stats.Timestamp.Format("2006-01-02 15:04:05"),
 				stats.RequestCount,
 				stats.ErrorCount,
 				stats.AvgLatency.Milliseconds(),
