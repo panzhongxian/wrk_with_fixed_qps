@@ -431,6 +431,7 @@ func main() {
 		qps               int
 		maxWorkers        int
 		enableSecondStats bool
+		file             string
 	)
 
 	flag.StringVar(&url, "url", "http://localhost:8080/delay", "测试目标URL")
@@ -440,6 +441,7 @@ func main() {
 	flag.IntVar(&qps, "qps", 0, "每秒请求数（与concurrency互斥）")
 	flag.IntVar(&maxWorkers, "max-workers", 2000, "QPS模式下的最大并发数")
 	flag.BoolVar(&enableSecondStats, "enable-second-stats", false, "是否记录每秒的统计信息")
+	flag.StringVar(&file, "file", "", "输入文件路径，如果指定则使用文件内容作为请求体")
 	flag.Parse()
 
 	// 验证参数
@@ -456,7 +458,17 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 
 	// 创建请求生成器
-	generator := NewSimpleRequestGenerator()
+	var generator RequestGenerator
+	var err error
+	if file != "" {
+		generator, err = NewFileGenerator(file)
+		if err != nil {
+			fmt.Printf("创建文件生成器失败: %v\n", err)
+			return
+		}
+	} else {
+		generator = NewSimpleRequestGenerator()
+	}
 
 	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout)*time.Second, qps, generator, enableSecondStats)
 	worker.maxWorkers = int32(maxWorkers)
@@ -470,6 +482,9 @@ func main() {
 	}
 	fmt.Printf("请求超时: %d秒\n", timeout)
 	fmt.Printf("每秒统计: %v\n", enableSecondStats)
+	if file != "" {
+		fmt.Printf("使用文件: %s\n", file)
+	}
 
 	worker.Start()
 	worker.PrintStats()
