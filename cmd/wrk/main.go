@@ -107,6 +107,7 @@ func (w *Worker) makeRequest() {
 	// 复用请求对象
 	w.reqMu.Lock()
 	w.reusableReq.Body = io.NopCloser(bytes.NewBuffer(jsonBody))
+	w.reusableReq.ContentLength = int64(len(jsonBody))
 	w.reqMu.Unlock()
 
 	// 从客户端池获取HTTP客户端
