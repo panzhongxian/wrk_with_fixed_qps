@@ -481,11 +481,9 @@ func main() {
 	fmt.Printf("参数值:\n")
 	fmt.Printf("  URL: %s\n", url)
 	if concurrency > 0 {
-		fmt.Printf("  模式: 并发模式\n")
-		fmt.Printf("  并发数: %d\n", concurrency)
+		fmt.Printf("  模式: 并发模式, 并发数: %d\n", concurrency)
 	} else {
-		fmt.Printf("  模式: QPS模式\n")
-		fmt.Printf("  QPS: %d\n", qps)
+		fmt.Printf("  模式: QPS模式, QPS: %d\n", qps)
 	}
 	fmt.Printf("  持续时间: %d秒\n", duration)
 	fmt.Printf("  超时时间: %d秒\n", timeout)
@@ -538,18 +536,7 @@ func main() {
 	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout)*time.Second, qps, generator, enableSecondStats)
 	worker.maxWorkers = int32(maxWorkers)
 
-	fmt.Printf("开始压测 %s\n", url)
-	if qps > 0 {
-		fmt.Printf("QPS: %d, 持续时间: %d秒\n", qps, duration)
-		fmt.Printf("最大并发数: %d\n", worker.maxWorkers)
-	} else {
-		fmt.Printf("并发数: %d, 持续时间: %d秒\n", concurrency, duration)
-	}
-	fmt.Printf("请求超时: %d秒\n", timeout)
-	fmt.Printf("每秒统计: %v\n", enableSecondStats)
-	if file != "" {
-		fmt.Printf("使用文件: %s\n", file)
-	}
+	fmt.Printf("开始压测...\n")
 
 	worker.Start()
 	worker.PrintStats()
