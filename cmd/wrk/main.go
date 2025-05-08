@@ -257,7 +257,6 @@ func (w *Worker) qpsWorker() {
 			requestsPerInterval[i]++
 		}
 	}
-	fmt.Println("requestsPerInterval:", requestsPerInterval)
 
 	// 创建请求发送通道
 	requestChan := make(chan struct{}, w.qps*2) // 增加通道大小
@@ -432,7 +431,7 @@ func main() {
 		qps               int
 		maxWorkers        int
 		enableSecondStats bool
-		file             string
+		file              string
 	)
 
 	flag.StringVar(&url, "url", "http://localhost:8080/delay", "测试目标URL")
@@ -481,10 +480,15 @@ func main() {
 	// 打印所有参数值，帮助调试
 	fmt.Printf("参数值:\n")
 	fmt.Printf("  URL: %s\n", url)
-	fmt.Printf("  并发数: %d\n", concurrency)
+	if concurrency > 0 {
+		fmt.Printf("  模式: 并发模式\n")
+		fmt.Printf("  并发数: %d\n", concurrency)
+	} else {
+		fmt.Printf("  模式: QPS模式\n")
+		fmt.Printf("  QPS: %d\n", qps)
+	}
 	fmt.Printf("  持续时间: %d秒\n", duration)
 	fmt.Printf("  超时时间: %d秒\n", timeout)
-	fmt.Printf("  QPS: %d\n", qps)
 	fmt.Printf("  最大并发数: %d\n", maxWorkers)
 	fmt.Printf("  每秒统计: %v\n", enableSecondStats)
 	fmt.Printf("  文件路径: %s\n", file)
