@@ -20,7 +20,7 @@ func NewSimpleRequestGenerator() *SimpleRequestGenerator {
 
 // Generate 生成请求
 func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
-	body := map[string]interface{}{"message": "test", "delay": 1}
+	body := map[string]interface{}{"message": "test", "delay": 100}
 	return json.Marshal(body)
 }
 

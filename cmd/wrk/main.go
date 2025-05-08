@@ -6,7 +6,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -56,13 +58,37 @@ type Worker struct {
 	workerChan    chan struct{}
 	// 是否记录每秒统计
 	enableSecondStats bool
+	// 可复用的请求对象
+	reusableReq *http.Request
+	reqMu       sync.Mutex
+}
+
+var sharedTransport = &http.Transport{
+	MaxIdleConns:          1000,
+	MaxIdleConnsPerHost:   100,
+	MaxConnsPerHost:       100,
+	IdleConnTimeout:       60 * time.Second,
+	DisableKeepAlives:     false,
+	DisableCompression:    true,
+	ResponseHeaderTimeout: 10 * time.Second,
+	ExpectContinueTimeout: 2 * time.Second,
+	ForceAttemptHTTP2:     true,
+	DialContext: (&net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	TLSHandshakeTimeout: 10 * time.Second,
+}
+
+var sharedClient = &http.Client{
+	Transport: sharedTransport,
+	Timeout:   30 * time.Second,
 }
 
 func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator RequestGenerator, enableSecondStats bool) *Worker {
 	// 根据QPS动态调整最大并发数
-	maxWorkers := int32(1000) // 默认最大并发数
+	maxWorkers := int32(1000)
 	if qps > 0 {
-		// 假设平均延迟为100ms，预留2倍缓冲
 		estimatedConcurrency := int32(float64(qps) * 0.1 * 2)
 		if estimatedConcurrency > maxWorkers {
 			maxWorkers = estimatedConcurrency
@@ -71,41 +97,30 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 		maxWorkers = int32(concurrency)
 	}
 
+	reusableReq, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		fmt.Printf("创建可复用请求对象失败: %v\n", err)
+		return nil
+	}
+	reusableReq.Header.Set("Content-Type", "application/json")
+
 	return &Worker{
-		client: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        int(maxWorkers),
-				MaxIdleConnsPerHost: int(maxWorkers),
-				MaxConnsPerHost:     int(maxWorkers),
-				IdleConnTimeout:     30 * time.Second,
-				DisableKeepAlives:   false,
-				DisableCompression:  true,
-				// 设置更激进的超时
-				ResponseHeaderTimeout: 5 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-				// 启用HTTP/2
-				ForceAttemptHTTP2: true,
-			},
-			Timeout: timeout,
-		},
+		client:            sharedClient, // 复用全局 http.Client
 		url:               url,
 		concurrency:       concurrency,
-		duration:         duration,
-		timeout:          timeout,
-		qps:              qps,
-		stats:            &RequestStats{
-			MinLatency: time.Hour,
-			MaxLatency: 0,
-		},
-		wg:               &sync.WaitGroup{},
-		stopChan:         make(chan struct{}),
-		generator:        generator,
-		maxWorkers:       maxWorkers,
-		workerChan:       make(chan struct{}, maxWorkers),
+		duration:          duration,
+		timeout:           timeout,
+		qps:               qps,
+		stats:             &RequestStats{MinLatency: time.Hour, MaxLatency: 0},
+		wg:                &sync.WaitGroup{},
+		stopChan:          make(chan struct{}),
+		generator:         generator,
+		maxWorkers:        maxWorkers,
+		workerChan:        make(chan struct{}, maxWorkers),
 		enableSecondStats: enableSecondStats,
+		reusableReq:       reusableReq,
 	}
 }
-
 func (w *Worker) makeRequest() {
 	jsonBody, err := w.generator.Generate()
 	if err != nil {
@@ -113,19 +128,18 @@ func (w *Worker) makeRequest() {
 		return
 	}
 
-	req, err := http.NewRequest("POST", w.url, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		atomic.AddInt64(&w.stats.FailedRequests, 1)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
+	// 复用请求对象
+	w.reqMu.Lock()
+	w.reusableReq.Body = io.NopCloser(bytes.NewBuffer(jsonBody))
+	w.reqMu.Unlock()
 
 	start := time.Now()
-	resp, err := w.client.Do(req)
+	resp, err := w.client.Do(w.reusableReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			atomic.AddInt64(&w.stats.TimeoutRequests, 1)
 		}
+		fmt.Printf("请求失败: %v\n", err)
 		atomic.AddInt64(&w.stats.FailedRequests, 1)
 		return
 	}
@@ -260,7 +274,7 @@ func (w *Worker) qpsWorker() {
 			defer w.wg.Done()
 			atomic.AddInt32(&activeWorkers, 1)
 			defer atomic.AddInt32(&activeWorkers, -1)
-			
+
 			for {
 				select {
 				case <-w.stopChan:
@@ -402,7 +416,7 @@ func (w *Worker) PrintStats() {
 	fmt.Printf("失败请求数: %d\n", w.stats.FailedRequests)
 	fmt.Printf("超时请求数: %d\n", w.stats.TimeoutRequests)
 	fmt.Printf("每秒请求数: %.2f\n", w.stats.RequestsPerSec)
-	
+
 	if w.stats.TotalRequests > 0 {
 		fmt.Printf("最小延迟: %v\n", w.stats.MinLatency)
 		fmt.Printf("最大延迟: %v\n", w.stats.MaxLatency)
@@ -415,12 +429,12 @@ func (w *Worker) PrintStats() {
 
 func main() {
 	var (
-		url              string
-		concurrency      int
-		duration         int
-		timeout          int
-		qps              int
-		maxWorkers       int
+		url               string
+		concurrency       int
+		duration          int
+		timeout           int
+		qps               int
+		maxWorkers        int
 		enableSecondStats bool
 	)
 

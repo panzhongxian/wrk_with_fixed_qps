@@ -31,10 +31,10 @@ func main() {
 	server := &http.Server{
 		Addr: ":8080",
 		// 设置读写超时
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
 		// 设置空闲超时
-		IdleTimeout: 120 * time.Second,
+		IdleTimeout: 300 * time.Second,
 		ConnState: func(conn net.Conn, state http.ConnState) {
 			switch state {
 			case http.StateNew:
