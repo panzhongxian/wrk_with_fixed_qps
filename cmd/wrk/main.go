@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -73,11 +72,8 @@ var sharedTransport = &http.Transport{
 	ResponseHeaderTimeout: 20 * time.Second,
 	ExpectContinueTimeout: 2 * time.Second,
 	ForceAttemptHTTP2:     true,
-	DialContext: (&net.Dialer{
-		Timeout:   1 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}).DialContext,
-	TLSHandshakeTimeout: 10 * time.Second,
+	DialContext:           DialWithCache,
+	TLSHandshakeTimeout:   10 * time.Second,
 }
 
 var sharedClient = &http.Client{
