@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -71,18 +72,25 @@ func DialWithCache(ctx context.Context, network, addr string) (net.Conn, error) 
 		return nil, err
 	}
 
-	// 尝试连接所有IP地址
+	// 尝试连接所有IP地址，最多重试3次
+	maxRetries := 3
 	var lastErr error
-	for _, ip := range ips {
-		conn, err := (&net.Dialer{
-			Timeout:   1 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext(ctx, network, net.JoinHostPort(ip, port))
-		if err == nil {
-			return conn, nil
+	for retry := 0; retry < maxRetries; retry++ {
+		for _, ip := range ips {
+			conn, err := (&net.Dialer{
+				Timeout:   5 * time.Second,    // 增加超时时间到5秒
+				KeepAlive: 30 * time.Second,
+			}).DialContext(ctx, network, net.JoinHostPort(ip, port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+			// 如果还有重试机会，等待一段时间再重试
+			if retry < maxRetries-1 {
+				time.Sleep(time.Duration(retry+1) * 500 * time.Millisecond)
+			}
 		}
-		lastErr = err
 	}
 
-	return nil, lastErr
+	return nil, fmt.Errorf("failed after %d retries, last error: %v", maxRetries, lastErr)
 } 
