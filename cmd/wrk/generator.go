@@ -20,7 +20,7 @@ func NewSimpleRequestGenerator() *SimpleRequestGenerator {
 
 // Generate 生成请求
 func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
-	body := map[string]string{"message": "test"}
+	body := map[string]interface{}{"message": "test", "delay": 1}
 	return json.Marshal(body)
 }
 
@@ -41,4 +41,4 @@ func NewCustomRequestGenerator(requests [][]byte) *CustomRequestGenerator {
 func (g *CustomRequestGenerator) Generate() ([]byte, error) {
 	index := atomic.AddInt64(&g.index, 1) % int64(len(g.requests))
 	return g.requests[index], nil
-} 
+}
