@@ -91,14 +91,24 @@ func (c *Counter) StartReporting(ctx context.Context) {
 			activeConns := c.GetActiveConnections()
 			concurrentReqs := c.GetConcurrentRequests()
 
-			// 将计数、活跃连接数和并发请求数写入Redis
-			err := c.redisCli.HSet(ctx, "request_counts",
-				fmt.Sprintf("%d_requests", timestamp), count,
-				fmt.Sprintf("%d_connections", timestamp), activeConns,
-				fmt.Sprintf("%d_concurrent", timestamp), concurrentReqs,
-			).Err()
-			if err != nil {
-				fmt.Printf("Error writing to Redis: %v\n", err)
+			// 只在有数据时才写入Redis
+			fields := make(map[string]interface{})
+			if count > 0 {
+				fields[fmt.Sprintf("%d_requests", timestamp)] = count
+			}
+			if activeConns > 0 {
+				fields[fmt.Sprintf("%d_connections", timestamp)] = activeConns
+			}
+			if concurrentReqs > 0 {
+				fields[fmt.Sprintf("%d_concurrent", timestamp)] = concurrentReqs
+			}
+
+			// 如果有数据才写入Redis
+			if len(fields) > 0 {
+				err := c.redisCli.HSet(ctx, "request_counts", fields).Err()
+				if err != nil {
+					fmt.Printf("Error writing to Redis: %v\n", err)
+				}
 			}
 		}
 	}
