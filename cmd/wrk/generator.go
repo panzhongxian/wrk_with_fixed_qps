@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"math/rand"
 	"sync/atomic"
 )
 
@@ -11,24 +10,17 @@ type RequestGenerator interface {
 	Generate() ([]byte, error)
 }
 
-// RandomDelayGenerator 随机延迟请求生成器
-type RandomDelayGenerator struct {
-	minDelay int64
-	maxDelay int64
+// SimpleRequestGenerator 简单请求生成器
+type SimpleRequestGenerator struct{}
+
+// NewSimpleRequestGenerator 创建简单请求生成器
+func NewSimpleRequestGenerator() *SimpleRequestGenerator {
+	return &SimpleRequestGenerator{}
 }
 
-// NewRandomDelayGenerator 创建随机延迟请求生成器
-func NewRandomDelayGenerator(minDelay, maxDelay int64) *RandomDelayGenerator {
-	return &RandomDelayGenerator{
-		minDelay: minDelay,
-		maxDelay: maxDelay,
-	}
-}
-
-// Generate 生成随机延迟的请求
-func (g *RandomDelayGenerator) Generate() ([]byte, error) {
-	delay := g.minDelay + rand.Int63n(g.maxDelay-g.minDelay+1)
-	body := map[string]int64{"delay_ms": delay}
+// Generate 生成请求
+func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
+	body := map[string]string{"message": "test"}
 	return json.Marshal(body)
 }
 
