@@ -59,9 +59,13 @@ func main() {
 			return
 		}
 
+		// 确保请求体被关闭
+		defer r.Body.Close()
+
 		var req DelayRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			log.Printf("Failed to decode request body: %v", err)
+			http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 			return
 		}
 
@@ -73,7 +77,11 @@ func main() {
 
 		// 返回响应
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "OK"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "OK"}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 	})
 
 	// 添加一个端点来查看当前统计信息
