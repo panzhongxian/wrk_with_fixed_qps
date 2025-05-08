@@ -18,7 +18,7 @@ type DelayRequest struct {
 
 func main() {
 	// 创建计数器实例
-	requestCounter, err := counter.NewCounter("localhost:6379")
+	requestCounter, err := counter.NewCounter()
 	if err != nil {
 		log.Fatalf("Failed to create counter: %v", err)
 	}

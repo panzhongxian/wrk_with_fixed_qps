@@ -19,7 +19,8 @@ type Counter struct {
 	concurrentRequests int64
 }
 
-func NewCounter(redisAddr string) (*Counter, error) {
+func NewCounter() (*Counter, error) {
+	redisAddr := os.Getenv("REDIS_ADDR")
 	redisPassword := os.Getenv("REDIS_PASSWORD")
 	client := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
