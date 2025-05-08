@@ -2,65 +2,41 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
+	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type RequestStats struct {
-	TotalRequests    int64
-	FailedRequests   int64
-	TotalLatency     time.Duration
-	MinLatency       time.Duration
-	MaxLatency       time.Duration
-	RequestsPerSec   float64
-	TotalBytes       int64
+	TotalRequests   int64
+	FailedRequests  int64
+	TimeoutRequests int64
+	TotalLatency    time.Duration
+	MinLatency      time.Duration
+	MaxLatency      time.Duration
+	RequestsPerSec  float64
+	TotalBytes      int64
+	// 用于计算分位数的延迟数组
+	Latencies []time.Duration
+	mu        sync.Mutex
 }
 
-// 请求生成器接口
-type RequestGenerator interface {
-	Generate() ([]byte, error)
-}
-
-// 随机延迟请求生成器
-type RandomDelayGenerator struct {
-	minDelay int64
-	maxDelay int64
-}
-
-func NewRandomDelayGenerator(minDelay, maxDelay int64) *RandomDelayGenerator {
-	return &RandomDelayGenerator{
-		minDelay: minDelay,
-		maxDelay: maxDelay,
-	}
-}
-
-func (g *RandomDelayGenerator) Generate() ([]byte, error) {
-	delay := g.minDelay + rand.Int63n(g.maxDelay-g.minDelay+1)
-	body := map[string]int64{"delay_ms": delay}
-	return json.Marshal(body)
-}
-
-// 自定义请求生成器
-type CustomRequestGenerator struct {
-	requests [][]byte
-	index    int64
-}
-
-func NewCustomRequestGenerator(requests [][]byte) *CustomRequestGenerator {
-	return &CustomRequestGenerator{
-		requests: requests,
-	}
-}
-
-func (g *CustomRequestGenerator) Generate() ([]byte, error) {
-	index := atomic.AddInt64(&g.index, 1) % int64(len(g.requests))
-	return g.requests[index], nil
+type SecondStats struct {
+	Timestamp     time.Time
+	RequestCount  int64
+	ErrorCount    int64
+	AvgLatency    time.Duration
+	P75Latency    time.Duration
+	P90Latency    time.Duration
+	P99Latency    time.Duration
 }
 
 type Worker struct {
@@ -68,28 +44,44 @@ type Worker struct {
 	url         string
 	concurrency int
 	duration    time.Duration
+	timeout     time.Duration
+	qps         int
 	stats       *RequestStats
 	wg          *sync.WaitGroup
 	stopChan    chan struct{}
 	generator   RequestGenerator
+	// QPS模式下的并发控制
+	activeWorkers int32
+	maxWorkers    int32
+	workerChan    chan struct{}
 }
 
-func NewWorker(url string, concurrency int, duration time.Duration, generator RequestGenerator) *Worker {
+func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator RequestGenerator) *Worker {
+	maxWorkers := int32(1000) // 默认最大并发数
+	if concurrency > 0 {
+		maxWorkers = int32(concurrency)
+	}
+
 	return &Worker{
 		client: &http.Client{
 			Transport: &http.Transport{
-				MaxIdleConns:        concurrency,
-				MaxIdleConnsPerHost: concurrency,
+				MaxIdleConns:        int(maxWorkers),
+				MaxIdleConnsPerHost: int(maxWorkers),
 				IdleConnTimeout:     30 * time.Second,
 			},
+			Timeout: timeout,
 		},
 		url:         url,
 		concurrency: concurrency,
 		duration:    duration,
+		timeout:     timeout,
+		qps:         qps,
 		stats:       &RequestStats{MinLatency: time.Hour},
 		wg:          &sync.WaitGroup{},
 		stopChan:    make(chan struct{}),
 		generator:   generator,
+		maxWorkers:  maxWorkers,
+		workerChan:  make(chan struct{}, maxWorkers),
 	}
 }
 
@@ -99,7 +91,7 @@ func (w *Worker) makeRequest() {
 		atomic.AddInt64(&w.stats.FailedRequests, 1)
 		return
 	}
-	
+
 	req, err := http.NewRequest("POST", w.url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		atomic.AddInt64(&w.stats.FailedRequests, 1)
@@ -110,17 +102,20 @@ func (w *Worker) makeRequest() {
 	start := time.Now()
 	resp, err := w.client.Do(req)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			atomic.AddInt64(&w.stats.TimeoutRequests, 1)
+		}
 		atomic.AddInt64(&w.stats.FailedRequests, 1)
 		return
 	}
 	defer resp.Body.Close()
 
 	latency := time.Since(start)
-	
+
 	// 更新统计信息
 	atomic.AddInt64(&w.stats.TotalRequests, 1)
 	atomic.AddInt64(&w.stats.TotalBytes, resp.ContentLength)
-	
+
 	// 更新延迟统计
 	for {
 		oldMin := w.stats.MinLatency
@@ -131,7 +126,7 @@ func (w *Worker) makeRequest() {
 			break
 		}
 	}
-	
+
 	for {
 		oldMax := w.stats.MaxLatency
 		if latency <= oldMax {
@@ -141,13 +136,67 @@ func (w *Worker) makeRequest() {
 			break
 		}
 	}
-	
+
 	atomic.AddInt64((*int64)(&w.stats.TotalLatency), int64(latency))
+
+	// 记录延迟用于计算分位数
+	w.stats.mu.Lock()
+	w.stats.Latencies = append(w.stats.Latencies, latency)
+	w.stats.mu.Unlock()
+}
+
+func (w *Worker) calculatePercentile(latencies []time.Duration, percentile float64) time.Duration {
+	if len(latencies) == 0 {
+		return 0
+	}
+	
+	sort.Slice(latencies, func(i, j int) bool {
+		return latencies[i] < latencies[j]
+	})
+	
+	index := int(float64(len(latencies)-1) * percentile)
+	return latencies[index]
+}
+
+func (w *Worker) collectSecondStats() *SecondStats {
+	w.stats.mu.Lock()
+	defer w.stats.mu.Unlock()
+	
+	if len(w.stats.Latencies) == 0 {
+		return nil
+	}
+	
+	// 计算分位数
+	p75 := w.calculatePercentile(w.stats.Latencies, 0.75)
+	p90 := w.calculatePercentile(w.stats.Latencies, 0.90)
+	p99 := w.calculatePercentile(w.stats.Latencies, 0.99)
+	
+	// 计算平均延迟
+	var totalLatency time.Duration
+	for _, l := range w.stats.Latencies {
+		totalLatency += l
+	}
+	avgLatency := totalLatency / time.Duration(len(w.stats.Latencies))
+	
+	stats := &SecondStats{
+		Timestamp:     time.Now(),
+		RequestCount:  int64(len(w.stats.Latencies)),
+		ErrorCount:    w.stats.FailedRequests,
+		AvgLatency:    avgLatency,
+		P75Latency:    p75,
+		P90Latency:    p90,
+		P99Latency:    p99,
+	}
+	
+	// 清空延迟数组，准备下一秒的统计
+	w.stats.Latencies = w.stats.Latencies[:0]
+	
+	return stats
 }
 
 func (w *Worker) worker() {
 	defer w.wg.Done()
-	
+
 	for {
 		select {
 		case <-w.stopChan:
@@ -158,11 +207,97 @@ func (w *Worker) worker() {
 	}
 }
 
+func (w *Worker) qpsWorker() {
+	defer w.wg.Done()
+
+	// 计算每个10ms间隔需要发送的请求数
+	intervalCount := 100 // 1秒分成100个10ms的间隔
+	baseRequests := w.qps / intervalCount
+	remainder := w.qps % intervalCount
+
+	// 预计算每个间隔的请求数
+	requestsPerInterval := make([]int, intervalCount)
+	for i := 0; i < intervalCount; i++ {
+		requestsPerInterval[i] = baseRequests
+		if i < remainder {
+			requestsPerInterval[i]++
+		}
+	}
+
+	// 使用10ms的ticker
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	// 当前间隔的索引
+	intervalIndex := 0
+
+	for {
+		select {
+		case <-w.stopChan:
+			return
+		case <-ticker.C:
+			// 获取当前间隔需要发送的请求数
+			requestsToSend := requestsPerInterval[intervalIndex]
+
+			// 更新间隔索引
+			intervalIndex = (intervalIndex + 1) % intervalCount
+
+			// 发送请求
+			for i := 0; i < requestsToSend; i++ {
+				// 检查当前活跃的worker数量
+				if atomic.LoadInt32(&w.activeWorkers) >= w.maxWorkers {
+					// 如果达到最大并发数，等待一个worker完成
+					select {
+					case <-w.workerChan:
+						atomic.AddInt32(&w.activeWorkers, -1)
+					case <-w.stopChan:
+						return
+					}
+				}
+
+				// 增加活跃worker计数
+				atomic.AddInt32(&w.activeWorkers, 1)
+
+				// 启动新的worker
+				go func() {
+					defer func() {
+						// worker完成后，通知主worker
+						w.workerChan <- struct{}{}
+					}()
+					w.makeRequest()
+				}()
+			}
+		}
+	}
+}
+
 func (w *Worker) Start() {
+	// 创建统计文件
+	statsFile, err := os.Create("stats.csv")
+	if err != nil {
+		fmt.Printf("创建统计文件失败: %v\n", err)
+		return
+	}
+	defer statsFile.Close()
+	
+	// 写入CSV头
+	fmt.Fprintf(statsFile, "timestamp,request_count,error_count,avg_latency,p75_latency,p90_latency,p99_latency\n")
+	
+	// 启动统计收集器
+	statsTicker := time.NewTicker(time.Second)
+	defer statsTicker.Stop()
+	
 	// 启动工作协程
-	for i := 0; i < w.concurrency; i++ {
+	if w.qps > 0 {
+		// QPS模式：使用一个goroutine，通过ticker控制请求频率
 		w.wg.Add(1)
-		go w.worker()
+		go w.qpsWorker()
+	} else {
+		// 并发模式：启动多个goroutine
+		for i := 0; i < w.concurrency; i++ {
+			w.wg.Add(1)
+			go w.worker()
+		}
 	}
 
 	// 设置测试时间
@@ -170,17 +305,51 @@ func (w *Worker) Start() {
 		close(w.stopChan)
 	})
 
+	// 启动统计收集
+	go func() {
+		for {
+			select {
+			case <-w.stopChan:
+				return
+			case <-statsTicker.C:
+				if stats := w.collectSecondStats(); stats != nil {
+					fmt.Fprintf(statsFile, "%s,%d,%d,%d,%d,%d,%d\n",
+						stats.Timestamp.Format(time.RFC3339),
+						stats.RequestCount,
+						stats.ErrorCount,
+						stats.AvgLatency.Milliseconds(),
+						stats.P75Latency.Milliseconds(),
+						stats.P90Latency.Milliseconds(),
+						stats.P99Latency.Milliseconds())
+				}
+			}
+		}
+	}()
+
 	// 等待所有工作协程完成
 	w.wg.Wait()
 
 	// 计算每秒请求数
 	w.stats.RequestsPerSec = float64(w.stats.TotalRequests) / w.duration.Seconds()
+	
+	// 写入最后一秒的统计
+	if stats := w.collectSecondStats(); stats != nil {
+		fmt.Fprintf(statsFile, "%s,%d,%d,%d,%d,%d,%d\n",
+			stats.Timestamp.Format(time.RFC3339),
+			stats.RequestCount,
+			stats.ErrorCount,
+			stats.AvgLatency.Milliseconds(),
+			stats.P75Latency.Milliseconds(),
+			stats.P90Latency.Milliseconds(),
+			stats.P99Latency.Milliseconds())
+	}
 }
 
 func (w *Worker) PrintStats() {
 	fmt.Printf("\n压测结果:\n")
 	fmt.Printf("总请求数: %d\n", w.stats.TotalRequests)
 	fmt.Printf("失败请求数: %d\n", w.stats.FailedRequests)
+	fmt.Printf("超时请求数: %d\n", w.stats.TimeoutRequests)
 	fmt.Printf("每秒请求数: %.2f\n", w.stats.RequestsPerSec)
 	fmt.Printf("最小延迟: %v\n", w.stats.MinLatency)
 	fmt.Printf("最大延迟: %v\n", w.stats.MaxLatency)
@@ -193,29 +362,47 @@ func main() {
 		url         string
 		concurrency int
 		duration    int
-		minDelay    int64
-		maxDelay    int64
+		timeout     int
+		qps         int
+		maxWorkers  int
 	)
 
 	flag.StringVar(&url, "url", "http://localhost:8080/delay", "测试目标URL")
-	flag.IntVar(&concurrency, "c", 100, "并发数")
-	flag.IntVar(&duration, "d", 30, "测试持续时间(秒)")
-	flag.Int64Var(&minDelay, "min", 50, "最小延迟(毫秒)")
-	flag.Int64Var(&maxDelay, "max", 200, "最大延迟(毫秒)")
+	flag.IntVar(&concurrency, "concurrency", 0, "并发数（与qps互斥）")
+	flag.IntVar(&duration, "duration", 30, "测试持续时间(秒)")
+	flag.IntVar(&timeout, "timeout", 5, "请求超时时间(秒)")
+	flag.IntVar(&qps, "qps", 0, "每秒请求数（与concurrency互斥）")
+	flag.IntVar(&maxWorkers, "max-workers", 1000, "QPS模式下的最大并发数")
 	flag.Parse()
+
+	// 验证参数
+	if concurrency > 0 && qps > 0 {
+		fmt.Println("错误：concurrency 和 qps 参数不能同时使用")
+		return
+	}
+	if concurrency == 0 && qps == 0 {
+		fmt.Println("错误：必须指定 concurrency 或 qps 参数")
+		return
+	}
 
 	// 初始化随机数生成器
 	rand.Seed(time.Now().UnixNano())
 
 	// 创建请求生成器
-	generator := NewRandomDelayGenerator(minDelay, maxDelay)
+	generator := NewSimpleRequestGenerator()
 
-	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, generator)
-	
+	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout)*time.Second, qps, generator)
+	worker.maxWorkers = int32(maxWorkers)
+
 	fmt.Printf("开始压测 %s\n", url)
-	fmt.Printf("并发数: %d, 持续时间: %d秒\n", concurrency, duration)
-	fmt.Printf("延迟范围: %d-%d毫秒\n", minDelay, maxDelay)
-	
+	if qps > 0 {
+		fmt.Printf("QPS: %d, 持续时间: %d秒\n", qps, duration)
+		fmt.Printf("最大并发数: %d\n", worker.maxWorkers)
+	} else {
+		fmt.Printf("并发数: %d, 持续时间: %d秒\n", concurrency, duration)
+	}
+	fmt.Printf("请求超时: %d秒\n", timeout)
+
 	worker.Start()
 	worker.PrintStats()
-} 
+}
