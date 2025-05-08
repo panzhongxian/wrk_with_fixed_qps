@@ -46,7 +46,7 @@ func NewFileGenerator(filePath string) (*FileGenerator, error) {
 }
 
 // Generate 生成下一行内容，如果到达文件末尾则从头开始
-func (g *FileGenerator) Generate() string {
+func (g *FileGenerator) Generate() ([]byte, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -56,5 +56,5 @@ func (g *FileGenerator) Generate() string {
 
 	line := g.lines[g.index]
 	g.index++
-	return line
+	return []byte(line), nil
 } 

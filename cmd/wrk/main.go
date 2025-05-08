@@ -446,7 +446,7 @@ func main() {
 			return
 		}
 	} else {
-		generator = &DelayGenerator{}
+		generator = NewSimpleRequestGenerator()
 	}
 
 	// 初始化随机数生成器
