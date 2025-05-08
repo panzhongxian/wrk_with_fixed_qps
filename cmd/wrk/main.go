@@ -70,11 +70,11 @@ var sharedTransport = &http.Transport{
 	IdleConnTimeout:       60 * time.Second,
 	DisableKeepAlives:     false,
 	DisableCompression:    true,
-	ResponseHeaderTimeout: 10 * time.Second,
+	ResponseHeaderTimeout: 20 * time.Second,
 	ExpectContinueTimeout: 2 * time.Second,
 	ForceAttemptHTTP2:     true,
 	DialContext: (&net.Dialer{
-		Timeout:   30 * time.Second,
+		Timeout:   1 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}).DialContext,
 	TLSHandshakeTimeout: 10 * time.Second,
@@ -82,7 +82,7 @@ var sharedTransport = &http.Transport{
 
 var sharedClient = &http.Client{
 	Transport: sharedTransport,
-	Timeout:   30 * time.Second,
+	Timeout:   10 * time.Second,
 }
 
 func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator RequestGenerator, enableSecondStats bool) *Worker {
@@ -249,9 +249,10 @@ func (w *Worker) qpsWorker() {
 	defer w.wg.Done()
 
 	// 计算每个10ms间隔需要发送的请求数
-	intervalCount := 100 // 1秒分成100个10ms的间隔
+	intervalCount := 50 // 1秒分成100个10ms的间隔
 	baseRequests := w.qps / intervalCount
 	remainder := w.qps % intervalCount
+	tickerInterval := 1000 * time.Millisecond / time.Duration(intervalCount)
 
 	// 预计算每个间隔的请求数
 	requestsPerInterval := make([]int, intervalCount)
@@ -287,7 +288,7 @@ func (w *Worker) qpsWorker() {
 	}
 
 	// 使用10ms的ticker
-	ticker := time.NewTicker(10 * time.Millisecond)
+	ticker := time.NewTicker(tickerInterval)
 	defer ticker.Stop()
 
 	// 当前间隔的索引
@@ -443,7 +444,7 @@ func main() {
 	flag.IntVar(&duration, "duration", 30, "测试持续时间(秒)")
 	flag.IntVar(&timeout, "timeout", 5, "请求超时时间(秒)")
 	flag.IntVar(&qps, "qps", 0, "每秒请求数（与concurrency互斥）")
-	flag.IntVar(&maxWorkers, "max-workers", 5000, "QPS模式下的最大并发数")
+	flag.IntVar(&maxWorkers, "max-workers", 2000, "QPS模式下的最大并发数")
 	flag.BoolVar(&enableSecondStats, "enable-second-stats", false, "是否记录每秒的统计信息")
 	flag.Parse()
 
