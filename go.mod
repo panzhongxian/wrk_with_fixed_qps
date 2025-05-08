@@ -1,4 +1,4 @@
-module mock_http_server
+module git.woa.com/jasonzxpan/wrk_server
 
 go 1.23.5
 
