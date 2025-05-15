@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -102,7 +103,6 @@ func (w *Worker) makeRequest() {
 	req.Header.Set("Content-Type", "application/json")
 
 	// 从客户端池获取HTTP客户端
-	client := clientPool.GetClient()
 
 	start := time.Now()
 	resp, err := client.Do(req)
@@ -114,7 +114,9 @@ func (w *Worker) makeRequest() {
 		atomic.AddInt64(&w.stats.FailedRequests, 1)
 		return
 	}
-	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	_ = body
 
 	// 检查响应状态码
 	if resp.StatusCode != http.StatusOK {
@@ -523,4 +525,6 @@ func main() {
 
 	worker.Start()
 	worker.PrintStats()
+
+	time.Sleep(1000 * time.Hour)
 }
