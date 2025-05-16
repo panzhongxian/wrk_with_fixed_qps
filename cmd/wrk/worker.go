@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,8 +26,8 @@ type Worker struct {
 	activeWorkers int32
 	maxWorkers    int32
 	workerChan    chan struct{}
-	// 是否记录每秒统计
-	enableSecondStats bool
+	// 每秒统计收集器
+	statsCollector *SecondStatsCollector
 }
 
 func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator RequestGenerator, enableSecondStats bool) *Worker {
@@ -44,19 +42,26 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 		maxWorkers = int32(concurrency)
 	}
 
+	stats := &RequestStats{MinLatency: time.Hour, MaxLatency: 0}
+	statsCollector, err := NewSecondStatsCollector(stats, enableSecondStats)
+	if err != nil {
+		fmt.Printf("创建统计收集器失败: %v\n", err)
+		return nil
+	}
+
 	return &Worker{
-		url:               url,
-		concurrency:       concurrency,
-		duration:          duration,
-		timeout:           timeout,
-		qps:               qps,
-		stats:             &RequestStats{MinLatency: time.Hour, MaxLatency: 0},
-		wg:                &sync.WaitGroup{},
-		stopChan:          make(chan struct{}),
-		generator:         generator,
-		maxWorkers:        maxWorkers,
-		workerChan:        make(chan struct{}, maxWorkers),
-		enableSecondStats: enableSecondStats,
+		url:            url,
+		concurrency:    concurrency,
+		duration:       duration,
+		timeout:        timeout,
+		qps:            qps,
+		stats:          stats,
+		wg:             &sync.WaitGroup{},
+		stopChan:       make(chan struct{}),
+		generator:      generator,
+		maxWorkers:     maxWorkers,
+		workerChan:     make(chan struct{}, maxWorkers),
+		statsCollector: statsCollector,
 	}
 }
 
@@ -74,8 +79,6 @@ func (w *Worker) makeRequest() {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-
-	// 从客户端池获取HTTP客户端
 
 	start := time.Now()
 	resp, err := client.Do(req)
@@ -128,61 +131,8 @@ func (w *Worker) makeRequest() {
 
 	atomic.AddInt64((*int64)(&w.stats.TotalLatency), int64(latency))
 
-	// 只在启用详细统计时记录延迟数组
-	if w.enableSecondStats {
-		w.stats.mu.Lock()
-		w.stats.Latencies = append(w.stats.Latencies, latency)
-		w.stats.mu.Unlock()
-	}
-}
-
-func (w *Worker) calculatePercentile(latencies []time.Duration, percentile float64) time.Duration {
-	if len(latencies) == 0 {
-		return 0
-	}
-
-	sort.Slice(latencies, func(i, j int) bool {
-		return latencies[i] < latencies[j]
-	})
-
-	index := int(float64(len(latencies)-1) * percentile)
-	return latencies[index]
-}
-
-func (w *Worker) collectSecondStats() *SecondStats {
-	w.stats.mu.Lock()
-	defer w.stats.mu.Unlock()
-
-	if len(w.stats.Latencies) == 0 {
-		return nil
-	}
-
-	// 计算分位数
-	p75 := w.calculatePercentile(w.stats.Latencies, 0.75)
-	p90 := w.calculatePercentile(w.stats.Latencies, 0.90)
-	p99 := w.calculatePercentile(w.stats.Latencies, 0.99)
-
-	// 计算平均延迟
-	var totalLatency time.Duration
-	for _, l := range w.stats.Latencies {
-		totalLatency += l
-	}
-	avgLatency := totalLatency / time.Duration(len(w.stats.Latencies))
-
-	stats := &SecondStats{
-		Timestamp:    time.Now(),
-		RequestCount: int64(len(w.stats.Latencies)),
-		ErrorCount:   w.stats.FailedRequests,
-		AvgLatency:   avgLatency,
-		P75Latency:   p75,
-		P90Latency:   p90,
-		P99Latency:   p99,
-	}
-
-	// 清空延迟数组，准备下一秒的统计
-	w.stats.Latencies = w.stats.Latencies[:0]
-
-	return stats
+	// 记录延迟到统计收集器
+	w.statsCollector.RecordLatency(latency)
 }
 
 func (w *Worker) worker() {
@@ -281,27 +231,8 @@ func (w *Worker) qpsWorker() {
 }
 
 func (w *Worker) Start() {
-	// 创建统计文件
-	var statsFile *os.File
-	var err error
-	if w.enableSecondStats {
-		statsFile, err = os.Create("stats.csv")
-		if err != nil {
-			fmt.Printf("创建统计文件失败: %v\n", err)
-			return
-		}
-		defer statsFile.Close()
-
-		// 写入CSV头
-		fmt.Fprintf(statsFile, "时间点,当秒请求数,错误数量,平均延迟,p75_latency,p90_latency,p99_latency\n")
-	}
-
 	// 启动统计收集器
-	var statsTicker *time.Ticker
-	if w.enableSecondStats {
-		statsTicker = time.NewTicker(time.Second)
-		defer statsTicker.Stop()
-	}
+	w.statsCollector.Start()
 
 	// 启动工作协程
 	if w.qps > 0 {
@@ -321,46 +252,12 @@ func (w *Worker) Start() {
 		close(w.stopChan)
 	})
 
-	// 启动统计收集
-	if w.enableSecondStats {
-		go func() {
-			for {
-				select {
-				case <-w.stopChan:
-					return
-				case <-statsTicker.C:
-					if stats := w.collectSecondStats(); stats != nil {
-						fmt.Fprintf(statsFile, "%s,%d,%d,%d,%d,%d,%d\n",
-							stats.Timestamp.Format("2006-01-02 15:04:05"),
-							stats.RequestCount,
-							stats.ErrorCount,
-							stats.AvgLatency.Milliseconds(),
-							stats.P75Latency.Milliseconds(),
-							stats.P90Latency.Milliseconds(),
-							stats.P99Latency.Milliseconds())
-					}
-				}
-			}
-		}()
-	}
-
 	// 等待所有工作协程完成
 	w.wg.Wait()
 
 	// 计算每秒请求数
 	w.stats.RequestsPerSec = float64(w.stats.TotalRequests) / w.duration.Seconds()
 
-	// 写入最后一秒的统计
-	if w.enableSecondStats {
-		if stats := w.collectSecondStats(); stats != nil {
-			fmt.Fprintf(statsFile, "%s,%d,%d,%d,%d,%d,%d\n",
-				stats.Timestamp.Format("2006-01-02 15:04:05"),
-				stats.RequestCount,
-				stats.ErrorCount,
-				stats.AvgLatency.Milliseconds(),
-				stats.P75Latency.Milliseconds(),
-				stats.P90Latency.Milliseconds(),
-				stats.P99Latency.Milliseconds())
-		}
-	}
+	// 停止统计收集器
+	w.statsCollector.Stop()
 }

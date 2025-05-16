@@ -127,6 +127,4 @@ func main() {
 
 	worker.Start()
 	worker.stats.PrintStats()
-
-	time.Sleep(1000 * time.Hour)
 }
