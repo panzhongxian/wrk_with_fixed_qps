@@ -26,9 +26,9 @@ func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
 	minute := now.Minute()
 
 	// 计算delay: (当前秒数 / 60) * 15
-	delay := 0
+	delay := 10
 	if minute%2 == 0 {
-		delay = 15
+		delay = 25
 	}
 
 	body := map[string]interface{}{"delay_ms": int64(delay)}
