@@ -280,6 +280,7 @@ func (w *Worker) qpsWorker() {
 	for {
 		select {
 		case <-w.stopChan:
+			fmt.Println("Stopping QPS worker...")
 			return
 		case <-ticker.C:
 			// 获取当前间隔需要发送的请求数
@@ -294,6 +295,7 @@ func (w *Worker) qpsWorker() {
 				case requestChan <- struct{}{}:
 					// 请求已发送到通道
 				case <-w.stopChan:
+					fmt.Println("Stopping QPS worker...")
 					return
 				default:
 					// 通道已满，跳过这个请求
