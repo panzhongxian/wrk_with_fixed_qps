@@ -29,7 +29,7 @@ func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
 	delay := 0
 	flag := minute % 4
 	if flag < 2 {
-		delay = 40
+		delay = 15
 	}
 
 	body := map[string]interface{}{"delay_ms": int64(delay)}
