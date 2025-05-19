@@ -1,80 +1,141 @@
-# Mock HTTP Server
+# HTTP 压测工具
 
-这是一个模拟HTTP服务器，提供延迟响应功能并统计请求数量和活跃连接数。
+这是一个简单的 HTTP 压测工具，用于于 HTTP POST 请求的测试。
+它支持两种压测模式：**固定并发模式**和 **固定QPS 模式**。支持按照秒级统计请求延迟和 QPS。
 
-## 功能特点
+![effect](wrk/effect.png)
 
-1. 提供HTTP服务，监听8080端口
-2. 处理JSON格式的POST请求
-3. 支持延迟响应（通过delay_ms参数指定延迟时间）
-4. 统计请求数量
-5. 统计活跃连接数
-6. 将每秒的请求数量和活跃连接数存储到Redis中
+## 特性
 
-## 前置要求
+- 支持并发模式和 QPS 模式
+- 请求延迟统计（最小、最大、平均）
+- QPS（每秒查询数、耗时分位数等）按秒统计
+- 失败请求计数，落本地日志（TODO）
+- 超时请求计数
+- 总传输字节统计
+- 可自定义测试持续时间
+- 可自定义请求超时时间
+- QPS 模式下的并发数限制
+- 支持从文件读取请求体
 
-- Go 1.16+
-- Redis服务器
+## 代码组织
 
-## 安装和运行
+项目代码分为以下主要文件：
 
-1. 确保Redis服务器正在运行（默认地址：localhost:6379）
+- `main.go`: 包含主要的压测逻辑
+  - `Worker` 结构体：管理 HTTP 客户端和请求处理
+  - 统计信息收集和报告
+  - 命令行参数处理
+- `generator.go`: 包含请求生成相关的代码
+  - `RequestGenerator` 接口：定义请求生成的标准接口
+  - `SimpleRequestGenerator`: 生成简单测试请求
+  - `CustomRequestGenerator`: 使用预定义请求列表的生成器
+- `file_generator.go`: 从文件读取请求体的生成器
+- `client_pool.go`: HTTP 客户端连接池管理
+- `dns_cache.go`: DNS 缓存实现
 
-2. 克隆并编译项目：
-```bash
-git clone <repository-url>
-cd mock_http_server
-go build -o server cmd/server/main.go
-```
-
-3. 运行服务器：
-```bash
-./server
-```
-
-## API使用
-
-### 延迟响应接口
-
-发送POST请求到 `/delay` 端点：
+## 编译
 
 ```bash
-curl -X POST http://localhost:8080/delay \
-  -H "Content-Type: application/json" \
-  -d '{"delay_ms": 122}'
+go build -o wrk cmd/wrk/main.go
 ```
 
-响应示例：
+## 使用方法
+
+```bash
+./wrk [选项]
+```
+
+### 命令行参数
+
+- `--url`: 测试目标URL（默认：http://localhost:8080/delay）
+- `--concurrency`: 并发数（与 qps 互斥）
+- `--duration`: 测试持续时间，单位秒（默认：30）
+- `--timeout`: 请求超时时间，单位秒（默认：5）
+- `--qps`: 每秒请求数（与 concurrency 互斥）
+- `--max-workers`: QPS 模式下的最大并发数（默认：2000）
+- `--enable-second-stats`: 是否记录每秒的统计信息（不需要指定值，使用该参数即表示启用）
+- `--file`: 输入文件路径，如果指定则使用文件内容作为请求体
+
+### 参数使用说明
+
+1. 字符串类型参数（如 `--url`、`--file`）：
+   - 使用等号：`--url=value`
+   - 或使用空格加引号：`--url "value"`
+
+2. 数值类型参数（如 `--qps`、`--duration`、`--max-workers`）：
+   - 使用等号：`--qps=1000`
+   - 或使用空格：`--qps 1000`
+
+3. 布尔类型参数（如 `--enable-second-stats`）：
+   - 只需要指定参数名：`--enable-second-stats`
+   - 不需要指定值
+
+### 压测模式
+
+1. 并发模式
+   - 使用 `--concurrency` 参数指定并发数
+   - 适合测试服务器在固定并发下的性能
+   - 示例：`./wrk --concurrency 100 --duration 30`
+
+2. QPS 模式
+   - 使用 `--qps` 参数指定每秒请求数
+   - 适合测试服务器在固定请求频率下的性能
+   - 通过 `--max-workers` 参数控制最大并发数，防止协程数量过多
+   - 示例：`./wrk --qps 1000 --duration 30 --max-workers 200`
+
+### 文件模式
+
+当使用 `--file` 参数时，工具会从指定文件中读取请求体。文件中的每一行将作为一次请求的内容，当读取到文件末尾时会自动从头开始。
+
+文件内容示例：
 ```json
-{
-  "status": "OK"
-}
+{"delay_ms": 100}
+{"delay_ms": 200}
+{"delay_ms": 300}
 ```
 
-### 统计信息接口
-
-获取当前活跃连接数：
-
+使用示例：
 ```bash
-curl http://localhost:8080/stats
+./wrk --url "http://localhost:8080/delay" --qps 1000 --duration 30 --file "requests.txt"
 ```
 
-响应示例：
-```json
-{
-  "active_connections": 5
-}
+### 输出说明
+
+工具会输出以下统计信息：
+- 总请求数
+- 失败请求数
+- 超时请求数
+- 每秒请求数（QPS）
+- 最小延迟
+- 最大延迟
+- 平均延迟
+- 总传输字节
+
+当启用 `--enable-second-stats` 时，会生成 stats.csv 文件，包含以下信息：
+- 时间点
+- 当秒请求数
+- 错误数量
+- 平均延迟
+- P75 延迟
+- P90 延迟
+- P99 延迟
+
+### 示例输出
+
 ```
+开始压测 http://localhost:8080/delay
+QPS: 1000, 持续时间: 30秒
+最大并发数: 200
+请求超时: 5秒
 
-## Redis数据
-
-统计信息存储在Redis的hash中：
-- Key: `request_counts`
-- Fields:
-  - `{timestamp}_requests`: 该秒内的请求数量
-  - `{timestamp}_connections`: 该秒内的活跃连接数
-
-可以使用以下Redis命令查看数据：
-```bash
-HGETALL request_counts
+压测结果:
+总请求数: 30000
+失败请求数: 0
+超时请求数: 0
+每秒请求数: 1000.00
+最小延迟: 50ms
+最大延迟: 200ms
+平均延迟: 125ms
+总传输字节: 1200000
 ``` 
