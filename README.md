@@ -3,7 +3,7 @@
 这是一个简单的 HTTP 压测工具，用于于 HTTP POST 请求的测试。
 它支持两种压测模式：**固定并发模式**和 **固定QPS 模式**。支持按照秒级统计请求延迟和 QPS。
 
-![effect](wrk/effect.png)
+![effect](images/effect.png)
 
 ## 特性
 
