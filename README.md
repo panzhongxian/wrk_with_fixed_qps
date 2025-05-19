@@ -20,16 +20,15 @@
 
 ## 代码组织
 
-项目代码分为以下主要文件：
+wrk 目录为工具的代码目录，分为以下主要文件：
 
-- `main.go`: 包含主要的压测逻辑
-  - `Worker` 结构体：管理 HTTP 客户端和请求处理
-  - 统计信息收集和报告
-  - 命令行参数处理
+- `main.go`: 包含参数处理，启动压测
+- `worker.go`: 包含主要的压测逻辑，管理 HTTP 客户端和请求处理
+- `stat.go`: 统计信息收集和报告
 - `generator.go`: 包含请求生成相关的代码
-  - `RequestGenerator` 接口：定义请求生成的标准接口
-  - `SimpleRequestGenerator`: 生成简单测试请求
-  - `CustomRequestGenerator`: 使用预定义请求列表的生成器
+    - `RequestGenerator` 接口：定义请求生成的标准接口
+    - `SimpleRequestGenerator`: 生成简单测试请求
+    - `CustomRequestGenerator`: 使用预定义请求列表的生成器
 - `file_generator.go`: 从文件读取请求体的生成器
 - `client_pool.go`: HTTP 客户端连接池管理
 - `dns_cache.go`: DNS 缓存实现
@@ -37,7 +36,7 @@
 ## 编译
 
 ```bash
-go build -o wrk cmd/wrk/main.go
+go build -o wrk ./wrk
 ```
 
 ## 使用方法
@@ -60,42 +59,50 @@ go build -o wrk cmd/wrk/main.go
 ### 参数使用说明
 
 1. 字符串类型参数（如 `--url`、`--file`）：
-   - 使用等号：`--url=value`
-   - 或使用空格加引号：`--url "value"`
+    - 使用等号：`--url=value`
+    - 或使用空格加引号：`--url "value"`
 
 2. 数值类型参数（如 `--qps`、`--duration`、`--max-workers`）：
-   - 使用等号：`--qps=1000`
-   - 或使用空格：`--qps 1000`
+    - 使用等号：`--qps=1000`
+    - 或使用空格：`--qps 1000`
 
 3. 布尔类型参数（如 `--enable-second-stats`）：
-   - 只需要指定参数名：`--enable-second-stats`
-   - 不需要指定值
+    - 只需要指定参数名：`--enable-second-stats`
+    - 不需要指定值
 
 ### 压测模式
 
 1. 并发模式
-   - 使用 `--concurrency` 参数指定并发数
-   - 适合测试服务器在固定并发下的性能
-   - 示例：`./wrk --concurrency 100 --duration 30`
+    - 使用 `--concurrency` 参数指定并发数
+    - 适合测试服务器在固定并发下的性能
+    - 示例：`./wrk --concurrency 100 --duration 30`
 
 2. QPS 模式
-   - 使用 `--qps` 参数指定每秒请求数
-   - 适合测试服务器在固定请求频率下的性能
-   - 通过 `--max-workers` 参数控制最大并发数，防止协程数量过多
-   - 示例：`./wrk --qps 1000 --duration 30 --max-workers 200`
+    - 使用 `--qps` 参数指定每秒请求数
+    - 适合测试服务器在固定请求频率下的性能
+    - 通过 `--max-workers` 参数控制最大并发数，防止协程数量过多
+    - 示例：`./wrk --qps 1000 --duration 30 --max-workers 200`
 
 ### 文件模式
 
 当使用 `--file` 参数时，工具会从指定文件中读取请求体。文件中的每一行将作为一次请求的内容，当读取到文件末尾时会自动从头开始。
 
 文件内容示例：
+
 ```json
-{"delay_ms": 100}
-{"delay_ms": 200}
-{"delay_ms": 300}
+{
+  "delay_ms": 100
+}
+{
+  "delay_ms": 200
+}
+{
+  "delay_ms": 300
+}
 ```
 
 使用示例：
+
 ```bash
 ./wrk --url "http://localhost:8080/delay" --qps 1000 --duration 30 --file "requests.txt"
 ```
@@ -103,6 +110,7 @@ go build -o wrk cmd/wrk/main.go
 ### 输出说明
 
 工具会输出以下统计信息：
+
 - 总请求数
 - 失败请求数
 - 超时请求数
@@ -113,6 +121,7 @@ go build -o wrk cmd/wrk/main.go
 - 总传输字节
 
 当启用 `--enable-second-stats` 时，会生成 stats.csv 文件，包含以下信息：
+
 - 时间点
 - 当秒请求数
 - 错误数量
