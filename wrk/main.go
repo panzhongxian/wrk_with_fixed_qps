@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -19,6 +20,7 @@ func main() {
 		maxWorkers        int
 		enableSecondStats bool
 		file              string
+		reqTemplate       string
 	)
 
 	flag.StringVar(&url, "url", "http://localhost:8080/delay", "测试目标URL")
@@ -29,6 +31,7 @@ func main() {
 	flag.IntVar(&maxWorkers, "max-workers", 2000, "QPS模式下的最大并发数")
 	flag.BoolVar(&enableSecondStats, "enable-second-stats", false, "是否记录每秒的统计信息（不需要指定值，使用该参数即表示启用）")
 	flag.StringVar(&file, "file", "", "输入文件路径，如果指定则使用文件内容作为请求体")
+	flag.StringVar(&reqTemplate, "req-template", "", "请求模板，用于从CSV文件生成请求体")
 
 	// 检查是否有未定义的参数
 	flag.Usage = func() {
@@ -77,6 +80,7 @@ func main() {
 	fmt.Printf("  最大并发数: %d\n", maxWorkers)
 	fmt.Printf("  每秒统计: %v\n", enableSecondStats)
 	fmt.Printf("  文件路径: %s\n", file)
+	fmt.Printf("  请求模板: %s\n", reqTemplate)
 	fmt.Println()
 
 	// 验证参数
@@ -92,10 +96,24 @@ func main() {
 		fmt.Println("错误：QPS模式下必须指定大于0的max-workers参数")
 		return
 	}
+
+	// 验证文件相关参数
+	if reqTemplate != "" && file == "" {
+		fmt.Println("错误：使用 --req-template 时必须指定 --file 参数")
+		return
+	}
 	if file != "" {
 		if _, err := os.Stat(file); os.IsNotExist(err) {
 			fmt.Printf("错误：文件 %s 不存在\n", file)
 			return
+		}
+		// 如果指定了模板，验证文件是否为CSV格式
+		if reqTemplate != "" {
+			ext := strings.ToLower(filepath.Ext(file))
+			if ext != ".csv" {
+				fmt.Printf("错误：使用 --req-template 时，文件 %s 必须是CSV格式\n", file)
+				return
+			}
 		}
 	}
 
@@ -106,15 +124,20 @@ func main() {
 	var generator RequestGenerator
 	var err error
 	if file != "" {
-		// 检查文件是否存在
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			fmt.Printf("错误：文件 %s 不存在\n", file)
-			return
-		}
-		generator, err = NewFileGenerator(file)
-		if err != nil {
-			fmt.Printf("创建文件生成器失败: %v\n", err)
-			return
+		if reqTemplate != "" {
+			// 使用模板生成器
+			generator, err = NewTplGenerator(file, reqTemplate)
+			if err != nil {
+				fmt.Printf("创建模板生成器失败: %v\n", err)
+				return
+			}
+		} else {
+			// 使用文件生成器
+			generator, err = NewFileGenerator(file)
+			if err != nil {
+				fmt.Printf("创建文件生成器失败: %v\n", err)
+				return
+			}
 		}
 	} else {
 		generator = NewSimpleRequestGenerator()

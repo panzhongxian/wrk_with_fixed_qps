@@ -17,6 +17,7 @@
 - 可自定义请求超时时间
 - QPS 模式下的并发数限制
 - 支持从文件读取请求体
+- 支持从CSV文件生成请求体（使用模板）
 
 ## 代码组织
 
@@ -30,6 +31,7 @@ wrk 目录为工具的代码目录，分为以下主要文件：
     - `SimpleRequestGenerator`: 生成简单测试请求
     - `CustomRequestGenerator`: 使用预定义请求列表的生成器
 - `file_generator.go`: 从文件读取请求体的生成器
+- `tpl_generator.go`: 从CSV文件生成请求体的生成器
 - `client_pool.go`: HTTP 客户端连接池管理
 - `dns_cache.go`: DNS 缓存实现
 
@@ -55,20 +57,71 @@ go build -o wrk ./wrk
 - `--max-workers`: QPS 模式下的最大并发数（默认：2000）
 - `--enable-second-stats`: 是否记录每秒的统计信息（不需要指定值，使用该参数即表示启用）
 - `--file`: 输入文件路径，如果指定则使用文件内容作为请求体
+- `--req-template`: 请求模板，用于从CSV文件生成请求体。使用此选项时必须同时指定 `--file` 参数，且文件必须是CSV格式
 
 ### 参数使用说明
 
-1. 字符串类型参数（如 `--url`、`--file`）：
-    - 使用等号：`--url=value`
-    - 或使用空格加引号：`--url "value"`
+#### 基本用法
 
-2. 数值类型参数（如 `--qps`、`--duration`、`--max-workers`）：
-    - 使用等号：`--qps=1000`
-    - 或使用空格：`--qps 1000`
+1. 并发模式：
+```bash
+./wrk --url http://localhost:8080/api --concurrency 100 --duration 30
+```
 
-3. 布尔类型参数（如 `--enable-second-stats`）：
-    - 只需要指定参数名：`--enable-second-stats`
-    - 不需要指定值
+2. QPS模式：
+```bash
+./wrk --url http://localhost:8080/api --qps 100 --duration 30
+```
+
+#### 使用文件作为请求体
+
+1. 直接使用文件内容：
+
+当使用 `--file` 参数时，工具会从指定文件中读取请求体。文件中的每一行将作为一次请求的内容，当读取到文件末尾时会自动从头开始。
+
+```bash
+./wrk --url http://localhost:8080/api --file requests.txt --qps 100
+```
+
+文件内容示例：
+
+```
+{ "delay_ms": 100 }
+{ "delay_ms": 200 }
+{ "delay_ms": 300 }
+```
+
+
+2. 使用CSV文件和模板生成请求体：
+```bash
+# CSV文件示例 (data.csv):
+# name,age,city
+# John,25,New York
+# Alice,30,London
+# Bob,35,Paris
+
+./wrk --url http://localhost:8080/api \
+      --file data.csv \
+      --req-template '{"name": "${name}", "age": "${age}", "city": "${city}"}' \
+      --qps 100
+```
+
+模板中的变量名（如 `${name}`）必须与CSV文件的表头列名完全匹配。工具会自动循环使用CSV中的数据行，当到达文件末尾时会从头开始。
+
+### 注意事项
+
+1. 使用 `--req-template` 时：
+   - 必须同时指定 `--file` 参数
+   - 文件必须是CSV格式（.csv后缀）
+   - CSV文件的第一行必须是表头
+   - 模板中使用的所有变量名必须在CSV表头中存在
+   - CSV文件的每一行数据列数必须与表头列数相同
+
+2. 并发模式和QPS模式不能同时使用
+
+3. 必须指定并发数或QPS中的一个
+
+4. QPS模式下必须指定大于0的max-workers参数
 
 ### 压测模式
 
@@ -83,29 +136,6 @@ go build -o wrk ./wrk
     - 通过 `--max-workers` 参数控制最大并发数，防止协程数量过多
     - 示例：`./wrk --qps 1000 --duration 30 --max-workers 200`
 
-### 文件模式
-
-当使用 `--file` 参数时，工具会从指定文件中读取请求体。文件中的每一行将作为一次请求的内容，当读取到文件末尾时会自动从头开始。
-
-文件内容示例：
-
-```json
-{
-  "delay_ms": 100
-}
-{
-  "delay_ms": 200
-}
-{
-  "delay_ms": 300
-}
-```
-
-使用示例：
-
-```bash
-./wrk --url "http://localhost:8080/delay" --qps 1000 --duration 30 --file "requests.txt"
-```
 
 ### 输出说明
 
