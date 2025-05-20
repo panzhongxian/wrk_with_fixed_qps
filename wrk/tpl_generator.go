@@ -52,6 +52,9 @@ func NewTplGenerator(filePath string, template string) (*TplGenerator, error) {
 
 	// 第一行作为表头
 	headers := records[0]
+	if len(headers) > 0 && len(headers[0]) >= 3 && headers[0][0] == 0xEF && headers[0][1] == 0xBB && headers[0][2] == 0xBF {
+		headers[0] = headers[0][3:]
+	}
 	// 剩余行作为数据
 	dataRecords := records[1:]
 
