@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"git.woa.com/jasonzxpan/wrk_server/wrk/gen"
 	"io"
 	"net/http"
 	"sync"
@@ -21,7 +22,7 @@ type Worker struct {
 	stats       *RequestStats
 	wg          *sync.WaitGroup
 	stopChan    chan struct{}
-	generator   RequestGenerator
+	generator   gen.RequestGenerator
 	// QPS模式下的并发控制
 	activeWorkers int32
 	maxWorkers    int32
@@ -55,7 +56,7 @@ func createClient() *http.Client {
 
 var client = createClient()
 
-func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator RequestGenerator, enableSecondStats bool) *Worker {
+func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator gen.RequestGenerator, enableSecondStats bool) *Worker {
 	// 根据QPS动态调整最大并发数
 	maxWorkers := int32(1000)
 	if qps > 0 {
