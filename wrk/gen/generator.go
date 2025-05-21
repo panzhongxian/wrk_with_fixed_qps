@@ -2,7 +2,6 @@ package gen
 
 import (
 	"encoding/json"
-	"sync/atomic"
 	"time"
 )
 
@@ -12,15 +11,35 @@ type RequestGenerator interface {
 }
 
 // SimpleRequestGenerator 简单请求生成器
-type SimpleRequestGenerator struct{}
+type SimpleRequestGenerator struct {
+	req string
+}
 
 // NewSimpleRequestGenerator 创建简单请求生成器
-func NewSimpleRequestGenerator() *SimpleRequestGenerator {
-	return &SimpleRequestGenerator{}
+func NewSimpleRequestGenerator(req string) *SimpleRequestGenerator {
+	return &SimpleRequestGenerator{
+		req: req,
+	}
 }
 
 // Generate 生成请求
 func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
+	return []byte(g.req), nil
+
+}
+
+// CustomRequestGenerator 自定义请求生成器
+type CustomRequestGenerator struct {
+	index int64
+}
+
+// NewCustomRequestGenerator 创建自定义请求生成器
+func NewCustomRequestGenerator() *CustomRequestGenerator {
+	return &CustomRequestGenerator{}
+}
+
+// Generate 按顺序生成请求
+func (g *CustomRequestGenerator) Generate() ([]byte, error) {
 	// 获取当前时间的秒数
 	now := time.Now()
 	minute := now.Minute()
@@ -34,23 +53,4 @@ func (g *SimpleRequestGenerator) Generate() ([]byte, error) {
 
 	body := map[string]interface{}{"delay_ms": int64(delay)}
 	return json.Marshal(body)
-}
-
-// CustomRequestGenerator 自定义请求生成器
-type CustomRequestGenerator struct {
-	requests [][]byte
-	index    int64
-}
-
-// NewCustomRequestGenerator 创建自定义请求生成器
-func NewCustomRequestGenerator(requests [][]byte) *CustomRequestGenerator {
-	return &CustomRequestGenerator{
-		requests: requests,
-	}
-}
-
-// Generate 按顺序生成请求
-func (g *CustomRequestGenerator) Generate() ([]byte, error) {
-	index := atomic.AddInt64(&g.index, 1) % int64(len(g.requests))
-	return g.requests[index], nil
 }
