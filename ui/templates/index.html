@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>压测监控面板</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        body {
+            zoom: 90%;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-box {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2196F3;
+        }
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+        .button {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        .button:hover {
+            background-color: #1976D2;
+        }
+        .button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #output {
+            background: #1e1e1e;
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-bottom: 20px;
+        }
+        /* 新增样式 */
+        .form-group {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .form-group label {
+            min-width: 120px;
+            color: #333;
+            margin-bottom: 0;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .form-group textarea {
+            min-height: 80px;
+        }
+        .form-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+        .form-row .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            border-bottom: none;
+            margin-right: 5px;
+            border-radius: 4px 4px 0 0;
+            transition: all 0.3s ease;
+        }
+        .tab.active {
+            background: #e3f2fd;
+            border-color: #2196F3;
+            border-bottom-color: #e3f2fd;
+            margin-bottom: -1px;
+            color: #1976D2;
+            font-weight: 500;
+        }
+        .tab:hover:not(.active) {
+            background: #f5f5f5;
+        }
+        .tab-content {
+            display: none;
+            padding: 10px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .tab-group {
+            margin-bottom: 30px;
+        }
+        .tab-group h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>压测监控面板</h1>
+        
+        <div class="card">
+            <h2>压测配置</h2>
+            <div class="form-group">
+                <label>目标URL</label>
+                <input type="text" id="targetUrl" placeholder="http://example.com" value="http://localhost:8080/delay">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>持续时间（秒）</label>
+                    <input type="number" id="duration" value="30" min="1">
+                </div>
+                <div class="form-group">
+                    <label>请求超时（秒）</label>
+                    <input type="number" id="timeout" value="5" min="1">
+                </div>
+            </div>
+            
+            <!-- 压测模式选择 -->
+            <div class="tab-group">
+                <div class="tabs" id="mode-tabs">
+                    <div class="tab active" data-tab="qps-mode">QPS模式</div>
+                    <div class="tab" data-tab="concurrency-mode">并发模式</div>
+                </div>
+                
+                <div class="tab-content active" id="qps-mode">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>目标QPS</label>
+                            <input type="number" id="targetQps" value="100" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>最大并发数</label>
+                            <input type="number" id="maxWorkers" value="2000" min="1">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="concurrency-mode">
+                    <div class="form-group">
+                        <label>并发数</label>
+                        <input type="number" id="concurrency" value="100" min="1">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 请求来源选择 -->
+            <div class="tab-group">
+                <div class="tabs" id="source-tabs">
+                    <div class="tab active" data-tab="simple-request">简单请求</div>
+                    <div class="tab" data-tab="file-request">文件请求</div>
+                    <div class="tab" data-tab="template-request">模板请求</div>
+                </div>
+                
+                <div class="tab-content active" id="simple-request">
+                    <div class="form-group">
+                        <label>请求体（JSON格式）</label>
+                        <textarea id="requestBody" style="font-family: monospace;">{ "delay_ms": 100 }</textarea>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="file-request">
+                    <div class="form-group">
+                        <label>请求文件路径</label>
+                        <input type="text" id="filePath" placeholder="输入文件路径">
+                    </div>
+                    <div class="form-group">
+                        <label>文件内容预览</label>
+                        <pre id="filePreview" style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto;"></pre>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="template-request">
+                    <div class="form-group">
+                        <label>CSV文件路径</label>
+                        <input type="text" id="csvFilePath" placeholder="输入CSV文件路径">
+                    </div>
+                    <div class="form-group">
+                        <label>请求模板（JSON格式）</label>
+                        <textarea id="requestTemplate" style="font-family: monospace;" placeholder='{"name": "${name}", "age": "${age}", "city": "${city}"}'></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>CSV文件预览</label>
+                        <pre id="csvPreview" style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto;"></pre>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 20px;">
+                <button id="startBtn" class="button">开始压测</button>
+                <button id="stopBtn" class="button" disabled>停止压测</button>
+            </div>
+        </div>
+
+        <div class="card" style="display: none;">
+            <h2>系统资源监控</h2>
+            <div class="stats-container">
+                <div class="stat-box">
+                    <div class="stat-value" id="cpuPercent">0%</div>
+                    <div class="stat-label">CPU 使用率</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="memoryPercent">0%</div>
+                    <div class="stat-label">内存使用率</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="memoryUsage">0 MB</div>
+                    <div class="stat-label">内存使用量</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>延迟监控</h2>
+            <div class="chart-container">
+                <canvas id="latencyChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>QPS监控</h2>
+            <div class="chart-container">
+                <canvas id="qpsChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>输出日志</h2>
+            <div id="output"></div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let latencyChart = null;
+        let qpsChart = null;
+        let latencyData = [];
+        let isRunning = false;
+        let statsCheckInterval = null;
+        let chartInitialized = false;
+
+        // 清理图表实例
+        function cleanupChart() {
+            try {
+                if (latencyChart) {
+                    console.log('清理现有延迟图表实例...');
+                    latencyChart.destroy();
+                    latencyChart = null;
+                }
+                if (qpsChart) {
+                    console.log('清理现有QPS图表实例...');
+                    qpsChart.destroy();
+                    qpsChart = null;
+                }
+                chartInitialized = false;
+            } catch (error) {
+                console.error('清理图表实例时出错:', error);
+            }
+        }
+
+        // 标签页切换
+        function initTabs(tabGroupId) {
+            const tabGroup = document.getElementById(tabGroupId);
+            const tabs = tabGroup.querySelectorAll('.tab');
+            const tabContents = tabGroup.parentElement.querySelectorAll('.tab-content');
+            
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    // 移除当前组内所有活动状态
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tabContents.forEach(c => c.classList.remove('active'));
+                    
+                    // 添加当前活动状态
+                    tab.classList.add('active');
+                    const targetContent = document.getElementById(tab.dataset.tab);
+                    if (targetContent) {
+                        targetContent.classList.add('active');
+                    }
+                });
+            });
+        }
+
+        // 初始化两组标签页
+        initTabs('mode-tabs');
+        initTabs('source-tabs');
+
+        // 获取当前配置
+        function getCurrentConfig() {
+            const commonConfig = {
+                targetUrl: document.getElementById('targetUrl').value,
+                duration: parseInt(document.getElementById('duration').value),
+                timeout: parseInt(document.getElementById('timeout').value),
+                enableSecondStats: true  // 始终启用每秒统计
+            };
+
+            // 获取压测模式配置
+            const modeTab = document.querySelector('#mode-tabs .tab.active').dataset.tab;
+            if (modeTab === 'qps-mode') {
+                commonConfig.qps = parseInt(document.getElementById('targetQps').value);
+                commonConfig.maxWorkers = parseInt(document.getElementById('maxWorkers').value);
+            } else {
+                commonConfig.concurrency = parseInt(document.getElementById('concurrency').value);
+            }
+
+            // 获取请求来源配置
+            const sourceTab = document.querySelector('#source-tabs .tab.active').dataset.tab;
+            switch(sourceTab) {
+                case 'simple-request':
+                    commonConfig.requestBody = document.getElementById('requestBody').value;
+                    break;
+                case 'file-request':
+                    commonConfig.file = document.getElementById('filePath').value;
+                    break;
+                case 'template-request':
+                    commonConfig.file = document.getElementById('csvFilePath').value;
+                    commonConfig.reqTemplate = document.getElementById('requestTemplate').value;
+                    break;
+            }
+
+            return commonConfig;
+        }
+
+        // WebSocket 连接状态处理
+        socket.on('connect', () => {
+            console.log('WebSocket连接成功');
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('WebSocket连接失败:', error);
+            alert('WebSocket连接失败，请刷新页面重试');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('WebSocket连接断开');
+        });
+
+        // 初始化延迟图表
+        async function initChart() {
+            try {
+                console.log('开始初始化图表...');
+                const latencyCtx = document.getElementById('latencyChart');
+                const qpsCtx = document.getElementById('qpsChart');
+                if (!latencyCtx || !qpsCtx) {
+                    console.error('找不到图表canvas元素');
+                    return false;
+                }
+
+                // 确保清理现有图表实例
+                cleanupChart();
+
+                // 确保canvas元素已经准备好
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // 延迟图表配置
+                const latencyChartConfig = {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: '平均延迟',
+                            data: [],
+                            borderColor: '#2196F3',
+                            tension: 0.1
+                        }, {
+                            label: 'P75延迟',
+                            data: [],
+                            borderColor: '#FFA726',
+                            tension: 0.1
+                        }, {
+                            label: 'P90延迟',
+                            data: [],
+                            borderColor: '#66BB6A',
+                            tension: 0.1
+                        }, {
+                            label: 'P99延迟',
+                            data: [],
+                            borderColor: '#EF5350',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'second',
+                                    displayFormats: {
+                                        second: 'HH:mm:ss'
+                                    },
+                                    parser: 'yyyy-MM-dd HH:mm:ss'
+                                },
+                                title: {
+                                    display: true,
+                                    text: '时间'
+                                }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: '延迟 (ms)'
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                position: 'top'
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false
+                            }
+                        }
+                    }
+                };
+
+                // QPS图表配置
+                const qpsChartConfig = {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: '成功QPS',
+                            data: [],
+                            borderColor: '#66BB6A',
+                            tension: 0.1
+                        }, {
+                            label: '失败QPS',
+                            data: [],
+                            borderColor: '#EF5350',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'second',
+                                    displayFormats: {
+                                        second: 'HH:mm:ss'
+                                    },
+                                    parser: 'yyyy-MM-dd HH:mm:ss'
+                                },
+                                title: {
+                                    display: true,
+                                    text: '时间'
+                                }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'QPS'
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                position: 'top'
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false
+                            }
+                        }
+                    }
+                };
+
+                // 创建新的图表实例
+                latencyChart = new Chart(latencyCtx.getContext('2d'), latencyChartConfig);
+                qpsChart = new Chart(qpsCtx.getContext('2d'), qpsChartConfig);
+                console.log('图表初始化完成');
+                chartInitialized = true;
+                return true;
+            } catch (error) {
+                console.error('初始化图表失败:', error);
+                cleanupChart();
+                return false;
+            }
+        }
+
+        // 检查stats.csv文件
+        async function checkStatsFile() {
+            // 如果压测已结束，停止检查
+            if (!isRunning) {
+                console.log('压测已结束，停止检查stats.csv');
+                if (statsCheckInterval) {
+                    clearInterval(statsCheckInterval);
+                    statsCheckInterval = null;
+                }
+                return;
+            }
+
+            try {
+                console.log('开始检查stats.csv文件...');
+                const response = await fetch('/api/preview-csv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: 'stats.csv' })
+                });
+                
+                if (!response.ok) {
+                    console.error('获取stats.csv失败:', response.status, response.statusText);
+                    return;
+                }
+
+                const result = await response.json();
+                console.log('获取到stats.csv内容:', result);
+
+                if (!result || !result.content) {
+                    console.log('stats.csv内容为空');
+                    return;
+                }
+
+                // 解析CSV数据
+                const lines = result.content.split('\n').filter(line => line.trim());  // 过滤空行
+                console.log('CSV行数:', lines.length);
+
+                if (lines.length <= 1) {
+                    console.log('CSV数据不足');
+                    return;
+                }
+
+                const headers = lines[0].split(',');
+                console.log('CSV表头:', headers);
+
+                const parsedData = lines.slice(1).map((line, index) => {
+                    try {
+                        const values = line.split(',');
+                        console.log(`解析第${index + 1}行:`, values);
+
+                        if (values.length < 7) {
+                            console.warn(`第${index + 1}行数据列数不足:`, values);
+                            return null;
+                        }
+
+                        const row = {
+                            timestamp: values[0],
+                            qps: parseInt(values[1]) || 0,
+                            errors: parseInt(values[2]) || 0,
+                            avg_latency: parseFloat(values[3]) || 0,
+                            p75_latency: parseFloat(values[4]) || 0,
+                            p90_latency: parseFloat(values[5]) || 0,
+                            p99_latency: parseFloat(values[6]) || 0
+                        };
+                        console.log(`解析后的第${index + 1}行数据:`, row);
+                        return row;
+                    } catch (error) {
+                        console.error(`解析第${index + 1}行时出错:`, error);
+                        return null;
+                    }
+                }).filter(item => item !== null);
+
+                console.log('解析后的数据:', parsedData);
+
+                if (parsedData.length === 0) {
+                    console.log('没有有效的数据行');
+                    return;
+                }
+
+                // 更新图表
+                const chartData = {
+                    timestamps: parsedData.map(d => d.timestamp),
+                    qps: parsedData.map(d => d.qps),
+                    errors: parsedData.map(d => d.errors),
+                    avg_latency: parsedData.map(d => d.avg_latency),
+                    p75_latency: parsedData.map(d => d.p75_latency),
+                    p90_latency: parsedData.map(d => d.p90_latency),
+                    p99_latency: parsedData.map(d => d.p99_latency)
+                };
+                console.log('准备更新图表数据:', chartData);
+                
+                // 确保图表已初始化
+                if (!chartInitialized || !latencyChart) {
+                    console.log('图表未初始化，正在初始化...');
+                    const initSuccess = await initChart();
+                    if (!initSuccess) {
+                        console.error('图表初始化失败，无法更新数据');
+                        return;
+                    }
+                }
+                
+                updateStatsChart(chartData);
+            } catch (error) {
+                console.error('处理stats.csv时发生错误:', error);
+            }
+        }
+
+        // 更新统计数据图表
+        function updateStatsChart(data) {
+            try {
+                console.log('开始更新图表...');
+                if (!latencyChart || !qpsChart) {
+                    console.error('图表未初始化');
+                    return;
+                }
+
+                if (!data || !data.timestamps || !data.avg_latency) {
+                    console.error('图表数据无效:', data);
+                    return;
+                }
+
+                // 将时间字符串转换为Date对象
+                const timestamps = data.timestamps.map(ts => new Date(ts));
+                console.log('转换后的时间戳:', timestamps);
+
+                // 获取当前数据
+                const currentLabels = latencyChart.data.labels || [];
+                const currentDatasets = latencyChart.data.datasets;
+                console.log('当前图表数据:', {
+                    labels: currentLabels,
+                    datasets: currentDatasets.map(ds => ({
+                        label: ds.label,
+                        dataLength: ds.data.length
+                    }))
+                });
+
+                // 检查是否有新数据
+                const lastTimestamp = currentLabels.length > 0 ? currentLabels[currentLabels.length - 1] : null;
+                const newDataStartIndex = lastTimestamp ? 
+                    timestamps.findIndex(ts => ts > lastTimestamp) : 0;
+
+                if (newDataStartIndex === -1) {
+                    console.log('没有新数据需要更新');
+                    return;
+                }
+
+                console.log('新数据起始索引:', newDataStartIndex);
+
+                // 只添加新数据
+                const newTimestamps = timestamps.slice(newDataStartIndex);
+                const newAvgLatency = data.avg_latency.slice(newDataStartIndex);
+                const newP75Latency = data.p75_latency.slice(newDataStartIndex);
+                const newP90Latency = data.p90_latency.slice(newDataStartIndex);
+                const newP99Latency = data.p99_latency.slice(newDataStartIndex);
+                const newQps = data.qps.slice(newDataStartIndex);
+
+                console.log('新数据:', {
+                    timestamps: newTimestamps,
+                    avgLatency: newAvgLatency,
+                    p75Latency: newP75Latency,
+                    p90Latency: newP90Latency,
+                    p99Latency: newP99Latency,
+                    qps: newQps
+                });
+
+                // 更新延迟图表
+                latencyChart.data.labels = [...currentLabels, ...newTimestamps];
+                currentDatasets[0].data = [...currentDatasets[0].data, ...newAvgLatency];
+                currentDatasets[1].data = [...currentDatasets[1].data, ...newP75Latency];
+                currentDatasets[2].data = [...currentDatasets[2].data, ...newP90Latency];
+                currentDatasets[3].data = [...currentDatasets[3].data, ...newP99Latency];
+
+                // 更新QPS图表
+                qpsChart.data.labels = [...qpsChart.data.labels, ...newTimestamps];
+                // 计算成功和失败的QPS
+                const successQps = newQps.map((qps, index) => qps - data.errors[newDataStartIndex + index]);
+                const failedQps = data.errors.slice(newDataStartIndex);
+                qpsChart.data.datasets[0].data = [...qpsChart.data.datasets[0].data, ...successQps];
+                qpsChart.data.datasets[1].data = [...qpsChart.data.datasets[1].data, ...failedQps];
+
+                // 限制显示的数据点数量，保持最新的100个点
+                const maxPoints = 100;
+                if (latencyChart.data.labels.length > maxPoints) {
+                    latencyChart.data.labels = latencyChart.data.labels.slice(-maxPoints);
+                    currentDatasets.forEach(dataset => {
+                        dataset.data = dataset.data.slice(-maxPoints);
+                    });
+                }
+                if (qpsChart.data.labels.length > maxPoints) {
+                    qpsChart.data.labels = qpsChart.data.labels.slice(-maxPoints);
+                    qpsChart.data.datasets.forEach(dataset => {
+                        dataset.data = dataset.data.slice(-maxPoints);
+                    });
+                }
+                
+                // 更新图表
+                latencyChart.update('none');
+                qpsChart.update('none');
+                console.log('图表更新完成');
+            } catch (error) {
+                console.error('更新图表时发生错误:', error);
+            }
+        }
+
+        // 更新系统资源显示
+        function updateStats(stats) {
+            document.getElementById('cpuPercent').textContent = stats.cpu_percent.toFixed(1) + '%';
+            document.getElementById('memoryPercent').textContent = stats.memory_percent.toFixed(1) + '%';
+            document.getElementById('memoryUsage').textContent = stats.memory_info.toFixed(1) + ' MB';
+        }
+
+        // 更新输出日志
+        function updateOutput(line) {
+            const output = document.getElementById('output');
+            output.innerHTML += line + '\n';
+            output.scrollTop = output.scrollHeight;
+        }
+
+        // WebSocket 事件处理
+        socket.on('process_stats', (stats) => {
+            updateStats(stats);
+        });
+
+        socket.on('process_output', (data) => {
+            updateOutput(data.line);
+        });
+
+        socket.on('latency_data', (data) => {
+            updateChart(data.latency);
+        });
+
+        // 添加stats_data事件处理
+        socket.on('stats_data', (data) => {
+            updateStatsChart(data);
+        });
+
+        // 添加进程结束事件处理
+        socket.on('process_end', () => {
+            console.log('压测进程已结束');
+            isRunning = false;
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            
+            // 停止检查stats.csv文件
+            if (statsCheckInterval) {
+                console.log('停止stats.csv轮询');
+                clearInterval(statsCheckInterval);
+                statsCheckInterval = null;
+            }
+        });
+
+        // 按钮事件处理
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            try {
+                console.log('开始压测...');
+                const config = getCurrentConfig();
+                console.log('压测配置:', config);
+                
+                const response = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                const data = await response.json();
+                console.log('压测启动响应:', data);
+                
+                if (data.status === 'started') {
+                    isRunning = true;
+                    document.getElementById('startBtn').disabled = true;
+                    document.getElementById('stopBtn').disabled = false;
+                    document.getElementById('output').innerHTML = '';
+                    latencyData = [];
+
+                    // 重置图表状态
+                    cleanupChart();
+
+                    // 开始定期检查stats.csv文件
+                    if (statsCheckInterval) {
+                        clearInterval(statsCheckInterval);
+                    }
+                    // 立即执行一次检查
+                    await checkStatsFile();
+                    // 然后开始定期检查
+                    statsCheckInterval = setInterval(checkStatsFile, 1000);  // 每秒检查一次
+                } else if (data.status === 'error') {
+                    alert('启动失败: ' + data.message);
+                }
+            } catch (error) {
+                console.error('启动失败:', error);
+                alert('启动失败: ' + error.message);
+            }
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', async () => {
+            try {
+                console.log('停止压测...');
+                const response = await fetch('/api/stop', {method: 'POST'});
+                const data = await response.json();
+                console.log('压测停止响应:', data);
+                if (data.status === 'stopped') {
+                    isRunning = false;
+                    document.getElementById('startBtn').disabled = false;
+                    document.getElementById('stopBtn').disabled = true;
+                    
+                    // 停止检查stats.csv文件
+                    if (statsCheckInterval) {
+                        clearInterval(statsCheckInterval);
+                        statsCheckInterval = null;
+                    }
+
+                    // 清理图表
+                    cleanupChart();
+                }
+            } catch (error) {
+                console.error('停止失败:', error);
+                alert('停止失败: ' + error.message);
+            }
+        });
+
+        // 文件预览功能
+        document.getElementById('filePath').addEventListener('change', async function() {
+            try {
+                const response = await fetch('/api/preview-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: this.value })
+                });
+                const data = await response.json();
+                document.getElementById('filePreview').textContent = data.content;
+            } catch (error) {
+                console.error('读取文件失败:', error);
+                document.getElementById('filePreview').textContent = '读取文件失败';
+            }
+        });
+
+        document.getElementById('csvFilePath').addEventListener('change', async function() {
+            try {
+                const response = await fetch('/api/preview-csv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: this.value })
+                });
+                const data = await response.json();
+                document.getElementById('csvPreview').textContent = data.content;
+            } catch (error) {
+                console.error('读取CSV文件失败:', error);
+                document.getElementById('csvPreview').textContent = '读取CSV文件失败';
+            }
+        });
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('页面加载完成，初始化图表...');
+            await initChart();
+        });
+    </script>
+</body>
+</html> 
