@@ -47,7 +47,6 @@ func main() {
 		},
 	}
 
-	// 设置HTTP处理函数
 	http.HandleFunc("/delay", func(w http.ResponseWriter, r *http.Request) {
 		// 增加并发请求计数
 		requestCounter.IncrementConcurrent()
