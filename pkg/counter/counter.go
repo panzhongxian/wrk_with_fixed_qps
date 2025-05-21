@@ -13,7 +13,7 @@ import (
 // Counter 是一个请求计数器
 type Counter struct {
 	// 使用分片计数器来提高并发性能
-	counters []int64
+	counter  int64
 	redisCli *redis.Client
 	// 活跃连接计数
 	activeConnections int64
@@ -25,54 +25,48 @@ type Counter struct {
 func NewCounter() (*Counter, error) {
 	redisAddr := os.Getenv("REDIS_ADDR")
 	redisPassword := os.Getenv("REDIS_PASSWORD")
-	redisCli := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: redisPassword,
-		DB:       0,
-		// 优化Redis连接池
-		PoolSize:        100,
-		MinIdleConns:    10,
-		ConnMaxLifetime: 30 * time.Minute,
-		ConnMaxIdleTime: 5 * time.Minute,
-	})
+	var redisCli *redis.Client = nil
+	if redisAddr != "" && redisPassword != "" {
+		redisCli = redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Password: redisPassword,
+			DB:       0,
+			// 优化Redis连接池
+			PoolSize:        100,
+			MinIdleConns:    10,
+			ConnMaxLifetime: 30 * time.Minute,
+			ConnMaxIdleTime: 5 * time.Minute,
+		})
 
-	// 测试Redis连接
-	ctx := context.Background()
-	if err := redisCli.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %v", err)
+		// 测试Redis连接
+		ctx := context.Background()
+		if err := redisCli.Ping(ctx).Err(); err != nil {
+			return nil, fmt.Errorf("failed to connect to Redis: %v", err)
+		}
+
+		// 创建计数器实例
 	}
-
-	// 创建计数器实例
-	counter := &Counter{
-		counters: make([]int64, 32), // 使用32个分片
+	return &Counter{
+		counter:  0,
 		redisCli: redisCli,
-	}
-
-	return counter, nil
+	}, nil
 }
 
 // Increment 增加计数器
 func (c *Counter) Increment() {
 	// 使用分片计数器
-	shard := time.Now().UnixNano() % int64(len(c.counters))
-	atomic.AddInt64(&c.counters[shard], 1)
+	atomic.AddInt64(&c.counter, 1)
 }
 
 // GetCount 获取当前计数
 func (c *Counter) GetCount() int64 {
-	var total int64
-	for i := range c.counters {
-		total += atomic.LoadInt64(&c.counters[i])
-	}
+	var total = atomic.LoadInt64(&c.counter)
 	return total
 }
 
 // GetAndReset 获取当前计数并重置为0
 func (c *Counter) GetAndReset() int64 {
-	var total int64
-	for i := range c.counters {
-		total += atomic.SwapInt64(&c.counters[i], 0)
-	}
+	total := atomic.SwapInt64(&c.counter, 0)
 	return total
 }
 
@@ -102,12 +96,20 @@ func (c *Counter) StartReporting(ctx context.Context) {
 			if concurrentReqs > 0 {
 				fields[fmt.Sprintf("%d_concurrent", timestamp)] = concurrentReqs
 			}
+			fmt.Println(fields)
 
 			// 如果有数据才写入Redis
 			if len(fields) > 0 {
-				err := c.redisCli.HSet(ctx, "request_counts", fields).Err()
-				if err != nil {
-					fmt.Printf("Error writing to Redis: %v\n", err)
+				if c.redisCli != nil {
+					err := c.redisCli.HSet(ctx, "request_counts", fields).Err()
+					if err != nil {
+						fmt.Printf("Error writing to Redis: %v\n", err)
+					}
+				} else {
+					fmt.Printf("Second stat info:\n")
+					for key, value := range fields {
+						fmt.Printf("   %s = %d\n", key, value)
+					}
 				}
 			}
 		}
