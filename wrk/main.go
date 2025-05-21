@@ -155,8 +155,10 @@ func main() {
 				return
 			}
 		}
+	} else if request != "" {
+		reqGenerator = gen.NewSimpleRequestGenerator(request)
 	} else {
-		reqGenerator = gen.NewSimpleRequestGenerator()
+		reqGenerator = gen.NewCustomRequestGenerator()
 	}
 
 	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout*1000)*time.Millisecond, qps, reqGenerator, enableSecondStats)
