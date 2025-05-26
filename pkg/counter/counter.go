@@ -43,9 +43,9 @@ func NewCounter() (*Counter, error) {
 		if err := redisCli.Ping(ctx).Err(); err != nil {
 			return nil, fmt.Errorf("failed to connect to Redis: %v", err)
 		}
-
-		// 创建计数器实例
 	}
+
+	// 创建计数器实例
 	return &Counter{
 		counter:  0,
 		redisCli: redisCli,
