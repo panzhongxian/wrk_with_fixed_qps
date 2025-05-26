@@ -4,43 +4,51 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 )
 
 // FileGenerator 从文件中循环读取内容的生成器
 type FileGenerator struct {
-	filePath string
-	lines    []string
-	index    int32
+	filePaths []string
+	lines     []string
+	index     int32
 }
 
 // NewFileGenerator 创建一个新的文件生成器
 func NewFileGenerator(filePath string) (*FileGenerator, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %v", filePath, err)
-	}
-	defer file.Close()
+	// Split file paths by comma
+	filePaths := strings.Split(filePath, ",")
+	var allLines []string
 
-	// 读取所有行
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	// Read all files
+	for _, path := range filePaths {
+		path = strings.TrimSpace(path)
+		file, err := os.Open(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open file %s: %v", path, err)
+		}
+		defer file.Close()
+
+		// Read all lines from this file
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			allLines = append(allLines, scanner.Text())
+		}
+
+		if err := scanner.Err(); err != nil {
+			return nil, fmt.Errorf("error reading file %s: %v", path, err)
+		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading file %s: %v", filePath, err)
-	}
-
-	if len(lines) == 0 {
-		return nil, fmt.Errorf("file %s is empty", filePath)
+	if len(allLines) == 0 {
+		return nil, fmt.Errorf("all files are empty")
 	}
 
 	return &FileGenerator{
-		filePath: filePath,
-		lines:    lines,
-		index:    0,
+		filePaths: filePaths,
+		lines:     allLines,
+		index:     0,
 	}, nil
 }
 

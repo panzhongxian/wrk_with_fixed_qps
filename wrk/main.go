@@ -119,16 +119,21 @@ func main() {
 		return
 	}
 	if file != "" {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			fmt.Printf("错误：文件 %s 不存在\n", file)
-			return
-		}
-		// 如果指定了模板，验证文件是否为CSV格式
-		if reqTemplate != "" {
-			ext := strings.ToLower(filepath.Ext(file))
-			if ext != ".csv" {
-				fmt.Printf("错误：使用 --req-template 时，文件 %s 必须是CSV格式\n", file)
+		// Split files by comma and validate each one
+		files := strings.Split(file, ",")
+		for _, f := range files {
+			f = strings.TrimSpace(f)
+			if _, err := os.Stat(f); os.IsNotExist(err) {
+				fmt.Printf("错误：文件 %s 不存在\n", f)
 				return
+			}
+			// If template is specified, validate CSV format for each file
+			if reqTemplate != "" {
+				ext := strings.ToLower(filepath.Ext(f))
+				if ext != ".csv" {
+					fmt.Printf("错误：使用 --req-template 时，文件 %s 必须是CSV格式\n", f)
+					return
+				}
 			}
 		}
 	}
