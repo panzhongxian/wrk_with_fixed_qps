@@ -197,6 +197,17 @@ def index():
     logger.info("访问主页")
     return render_template('index.html')
 
+SAFE_DIRECTORY = '/data/'
+
+def open_safe_file(file_path):
+    normalized_path = os.path.normpath(file_path)
+    full_path =.path.join(SAFE_DIRECTORY, normalized_path)
+    full_path = os.path.abspath(full_path)
+    safe_abs_path = os.path.abspath(S_DIRECTORY)
+    if not full_path.startswith(safe_abs_path):
+        raise ValueError("Invalid file path")
+    return open(full_path,r')
+
 @app.route('/api/preview-file', methods=['POST'])
 def preview_file():
     try:
@@ -205,8 +216,11 @@ def preview_file():
         
         if not file_path or not os.path.exists(file_path):
             return jsonify({'error': '文件不存在'}), 404
-        
-        with open(file_path, 'r') as f:
+
+        if not file_path.endswith(('.txt', '.log', '.json', '.csv')):
+            return jsonify({'error': '不支持的文件格式'}), 400
+
+        with open_safe_file(file_path, 'r') as f:
             content = f.read()
         
         return jsonify({'content': content})
@@ -219,19 +233,19 @@ def preview_csv():
     try:
         data = request.get_json()
         file_path = data.get('path')
-        
+
         if not file_path or not os.path.exists(file_path):
             return jsonify({'error': '文件不存在'}), 404
-        
+
         if not file_path.endswith('.csv'):
             return jsonify({'error': '文件必须是CSV格式'}), 400
-        
+
         content = []
-        with open(file_path, 'r') as f:
+        with open_safe_file(file_path, 'r') as f:
             reader = csv.reader(f)
             for row in reader:
                 content.append(','.join(row))
-        
+
         return jsonify({'content': '\n'.join(content)})
     except Exception as e:
         logger.error(f"预览CSV文件失败: {str(e)}")
@@ -358,4 +372,4 @@ if __name__ == '__main__':
     check_and_build_wrk()
     
     logger.info("启动服务器在端口 8081")
-    socketio.run(app, debug=True, host='0.0.0.0', port=8081) 
+    socketio.run(app, debug=True, host='0.0.0.0', port=8081)
