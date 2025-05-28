@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"git.woa.com/jasonzxpan/wrk_server/wrk/gen"
+	"git.woa.com/jasonzxpan/wrk_server/wrkx/gen"
 	"math/rand"
 	"os"
 	"path/filepath"
