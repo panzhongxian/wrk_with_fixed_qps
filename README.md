@@ -22,7 +22,7 @@
 
 ## 代码组织
 
-wrk 目录为工具的代码目录，分为以下主要文件：
+wrkx 目录为工具的代码目录，分为以下主要文件：
 
 - `main.go`: 包含参数处理，启动压测
 - `worker.go`: 包含主要的压测逻辑，管理 HTTP 客户端和请求处理
@@ -39,13 +39,13 @@ wrk 目录为工具的代码目录，分为以下主要文件：
 ## 编译
 
 ```bash
-go build -o wrk ./wrk
+go build -o wrkx ./wrkx
 ```
 
 ## 使用方法
 
 ```bash
-./wrk [选项]
+./wrkx [选项]
 ```
 
 ### 命令行参数
@@ -72,29 +72,29 @@ go build -o wrk ./wrk
 
 1. 并发模式：
 ```bash
-./wrk --url http://localhost:8080/api --concurrency 100 --duration 30
+./wrkx --url http://localhost:8080/api --concurrency 100 --duration 30
 ```
 
 2. QPS模式：
 ```bash
-./wrk --url http://localhost:8080/api --qps 100 --duration 30
+./wrkx --url http://localhost:8080/api --qps 100 --duration 30
 ```
 
 #### 请求来源选择
 
 1. 使用固定请求体：
 ```bash
-./wrk --url http://localhost:8080/api --request '{"key": "value"}' --qps 100
+./wrkx --url http://localhost:8080/api --request '{"key": "value"}' --qps 100
 ```
 
 2. 使用文件内容：
 ```bash
-./wrk --url http://localhost:8080/api --file requests.txt --qps 100
+./wrkx --url http://localhost:8080/api --file requests.txt --qps 100
 ```
 
 3. 使用CSV文件和模板：
 ```bash
-./wrk --url http://localhost:8080/api \
+./wrkx --url http://localhost:8080/api \
       --file data.csv \
       --req-template '{"name": "${name}", "age": "${age}", "city": "${city}"}' \
       --qps 100
@@ -121,13 +121,13 @@ go build -o wrk ./wrk
 1. 并发模式
     - 使用 `--concurrency` 参数指定并发数
     - 适合测试服务器在固定并发下的性能
-    - 示例：`./wrk --concurrency 100 --duration 30`
+    - 示例：`./wrkx --concurrency 100 --duration 30`
 
 2. QPS 模式
     - 使用 `--qps` 参数指定每秒请求数
     - 适合测试服务器在固定请求频率下的性能
     - 通过 `--max-workers` 参数控制最大并发数，防止协程数量过多
-    - 示例：`./wrk --qps 1000 --duration 30 --max-workers 200`
+    - 示例：`./wrkx --qps 1000 --duration 30 --max-workers 200`
 
 
 ### 输出说明

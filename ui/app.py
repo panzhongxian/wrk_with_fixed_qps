@@ -129,16 +129,16 @@ def monitor_stats_file():
             logger.error(f"监控stats.csv文件失败: {str(e)}")
             time.sleep(1)
 
-def check_and_build_wrk():
-    """检查并构建wrk"""
-    wrk_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'wrk', 'wrk')
-    if not os.path.exists(wrk_path):
-        print("wrk不存在，开始构建...")
-        wrk_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'wrk')
+def check_and_build_wrkx():
+    """检查并构建wrkx"""
+    wrkx_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'wrkx', 'wrkx')
+    if not os.path.exists(wrkx_path):
+        print("wrkx不存在，开始构建...")
+        wrkx_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'wrkx')
         try:
-            # 切换到wrk目录
+            # 切换到wrkx目录
             original_dir = os.getcwd()
-            os.chdir(wrk_dir)
+            os.chdir(wrkx_dir)
             
             # 执行go build
             result = subprocess.run(['go', 'build'], capture_output=True, text=True)
@@ -147,19 +147,19 @@ def check_and_build_wrk():
             os.chdir(original_dir)
             
             if result.returncode == 0:
-                print("wrk构建成功")
+                print("wrkx构建成功")
             else:
-                print("wrk构建失败:", result.stderr)
+                print("wrkx构建失败:", result.stderr)
                 sys.exit(1)
         except Exception as e:
-            print("构建wrk时出错:", str(e))
+            print("构建wrkx时出错:", str(e))
             sys.exit(1)
     else:
-        print("wrk已存在，跳过构建")
+        print("wrkx已存在，跳过构建")
 
 def build_command(config):
     """根据配置构建压测命令"""
-    base_cmd = ['../wrk/wrk']
+    base_cmd = ['../wrkx/wrkx']
     
     # 添加目标URL
     base_cmd.extend(['--url', config['targetUrl']])
@@ -368,8 +368,8 @@ def get_status():
     return jsonify({'running': False})
 
 if __name__ == '__main__':
-    # 检查并构建wrk
-    check_and_build_wrk()
+    # 检查并构建wrkx
+    check_and_build_wrkx()
     
     logger.info("启动服务器在端口 8081")
     socketio.run(app, debug=True, host='0.0.0.0', port=8081)
