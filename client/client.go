@@ -23,9 +23,9 @@ func StartConcurrentRequests(url string, concurrency int) {
 		Transport: &http.Transport{
 			MaxIdleConns:        1000,
 			MaxIdleConnsPerHost: 1000,
-			IdleConnTimeout:     90 * time.Second,
 		},
 	}
+	//http.Transport{}.RoundTrip()
 
 	// Start concurrent requests
 	for i := 0; i < concurrency; i++ {
@@ -41,13 +41,13 @@ func StartConcurrentRequests(url string, concurrency int) {
 						continue
 					}
 					req.Header.Set("Content-Type", "application/json")
-					
+
 					resp, err := client.Do(req)
 					if err != nil {
 						fmt.Printf("Error making request: %v\n", err)
 						continue
 					}
-					
+
 					body, err := io.ReadAll(resp.Body)
 					resp.Body.Close()
 					if err != nil {
@@ -72,8 +72,8 @@ func StartConcurrentRequests(url string, concurrency int) {
 
 func main() {
 	// 设置目标URL和并发数
-	url := "http://localhost:8080/delay"  // 替换为你的目标URL
-	concurrency := 1000
+	url := "http://wrk-test-server.shcdpdsp-in.woa.com/delay" // 替换为你的目标URL
+	concurrency := 10
 
 	fmt.Printf("Starting %d concurrent requests to %s\n", concurrency, url)
 	fmt.Println("Press Ctrl+C to stop")
@@ -88,4 +88,4 @@ func main() {
 	// 等待中断信号
 	<-sigChan
 	fmt.Println("\nShutting down...")
-} 
+}
