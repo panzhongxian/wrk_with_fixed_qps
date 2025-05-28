@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"git.woa.com/jasonzxpan/wrk_server/wrk/gen"
+	"git.woa.com/jasonzxpan/wrk_server/wrkx/gen"
 	"io"
 	"net/http"
 	"sync"
