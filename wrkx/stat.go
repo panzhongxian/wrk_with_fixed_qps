@@ -103,6 +103,7 @@ func (c *SecondStatsCollector) Start() {
 						stats.P75Latency.Milliseconds(),
 						stats.P90Latency.Milliseconds(),
 						stats.P99Latency.Milliseconds())
+					c.statsFile.Sync()
 				}
 			}
 		}
