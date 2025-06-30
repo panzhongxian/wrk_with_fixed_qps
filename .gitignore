@@ -1,2 +1,5 @@
 .idea
 stats.csv
+server/server
+*.csv
+wrkx/wrkx
