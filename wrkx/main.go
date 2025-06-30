@@ -23,6 +23,8 @@ func main() {
 		file              string
 		reqTemplate       string
 		request           string
+		method            string
+		headers           string
 	)
 
 	flag.StringVar(&url, "url", "http://localhost:8080/delay", "测试目标URL")
@@ -35,6 +37,8 @@ func main() {
 	flag.StringVar(&file, "file", "", "输入文件路径，如果指定则使用文件内容作为请求体")
 	flag.StringVar(&reqTemplate, "req-template", "", "请求模板，用于从CSV文件生成请求体")
 	flag.StringVar(&request, "request", "", "请求体字符串，如果指定则file和req-template必须为空")
+	flag.StringVar(&method, "method", "POST", "HTTP请求方法")
+	flag.StringVar(&headers, "header", "", "额外的HTTP头部，格式为key1:value1,key2:value2")
 
 	// 检查是否有未定义的参数
 	flag.Usage = func() {
@@ -73,6 +77,10 @@ func main() {
 	// 打印所有参数值，帮助调试
 	fmt.Printf("参数值:\n")
 	fmt.Printf("  URL: %s\n", url)
+	fmt.Printf("  请求方法: %s\n", method)
+	if headers != "" {
+		fmt.Printf("  额外头部: %s\n", headers)
+	}
 	if concurrency > 0 {
 		fmt.Printf("  模式: 并发模式, 并发数: %d\n", concurrency)
 	} else {
@@ -166,7 +174,7 @@ func main() {
 		reqGenerator = gen.NewCustomRequestGenerator()
 	}
 
-	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout*1000)*time.Millisecond, qps, reqGenerator, enableSecondStats)
+	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout*1000)*time.Millisecond, qps, reqGenerator, enableSecondStats, method, headers)
 	worker.maxWorkers = int32(maxWorkers)
 
 	fmt.Printf("开始压测...\n")

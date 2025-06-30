@@ -8,6 +8,7 @@ import (
 	"git.woa.com/jasonzxpan/wrk_server/wrkx/gen"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,9 @@ type Worker struct {
 	workerChan    chan struct{}
 	// 每秒统计收集器
 	statsCollector *SecondStatsCollector
+	// HTTP请求相关
+	method  string
+	headers map[string]string
 }
 
 // createClient 创建一个新的HTTP客户端
@@ -56,7 +60,7 @@ func createClient() *http.Client {
 
 var client = createClient()
 
-func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator gen.RequestGenerator, enableSecondStats bool) *Worker {
+func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator gen.RequestGenerator, enableSecondStats bool, method string, headers string) *Worker {
 	// 根据QPS动态调整最大并发数
 	maxWorkers := int32(1000)
 	if qps > 0 {
@@ -75,6 +79,23 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 		return nil
 	}
 
+	// 解析headers字符串
+	headersMap := make(map[string]string)
+	if headers != "" {
+		headerPairs := strings.Split(headers, ",")
+		for _, pair := range headerPairs {
+			pair = strings.TrimSpace(pair)
+			if pair != "" {
+				parts := strings.SplitN(pair, ":", 2)
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					value := strings.TrimSpace(parts[1])
+					headersMap[key] = value
+				}
+			}
+		}
+	}
+
 	return &Worker{
 		url:            url,
 		concurrency:    concurrency,
@@ -88,6 +109,8 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 		maxWorkers:     maxWorkers,
 		workerChan:     make(chan struct{}, maxWorkers),
 		statsCollector: statsCollector,
+		method:         method,
+		headers:        headersMap,
 	}
 }
 
@@ -98,13 +121,20 @@ func (w *Worker) makeRequest() {
 		return
 	}
 
-	req, err := http.NewRequest("POST", w.url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest(w.method, w.url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		fmt.Printf("创建请求失败: %v\n", err)
 		atomic.AddInt64(&w.stats.FailedRequests, 1)
 		return
 	}
+	
+	// 设置默认的Content-Type头部
 	req.Header.Set("Content-Type", "application/json")
+	
+	// 设置用户指定的额外头部
+	for key, value := range w.headers {
+		req.Header.Set(key, value)
+	}
 
 	start := time.Now()
 	resp, err := client.Do(req)
