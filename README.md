@@ -8,6 +8,8 @@
 ## 特性
 
 - 支持并发模式和 QPS 模式
+- 支持自定义HTTP方法（GET, POST, PUT, DELETE等）
+- 支持自定义HTTP头部
 - 请求延迟统计（最小、最大、平均）
 - QPS（每秒查询数、耗时分位数等）按秒统计
 - 失败请求计数，落本地日志（TODO）
@@ -57,6 +59,8 @@ go build -o wrkx ./wrkx
 
 #### 通用参数
 - `--url`: 测试目标URL（默认：http://localhost:8080/delay）
+- `--method`: HTTP请求方法（默认：POST）
+- `--header`: 额外的HTTP头部，格式为key1:value1,key2:value2（可选）
 - `--duration`: 测试持续时间，单位秒（默认：30）
 - `--timeout`: 请求超时时间，单位秒（默认：5）
 - `--enable-second-stats`: 是否记录每秒的统计信息（不需要指定值，使用该参数即表示启用）
@@ -78,6 +82,23 @@ go build -o wrkx ./wrkx
 2. QPS模式：
 ```bash
 ./wrkx --url http://localhost:8080/api --qps 100 --duration 30
+```
+
+#### HTTP方法和头部设置
+
+1. 使用GET方法：
+```bash
+./wrkx --url http://localhost:8080/api --method GET --qps 100
+```
+
+2. 添加自定义头部：
+```bash
+./wrkx --url http://localhost:8080/api --header "Authorization:Bearer token123,X-Custom-Header:value" --qps 100
+```
+
+3. 组合使用不同方法和头部：
+```bash
+./wrkx --url http://localhost:8080/api --method PUT --header "Content-Type:application/xml,Authorization:Bearer token" --qps 100
 ```
 
 #### 请求来源选择
@@ -107,7 +128,13 @@ go build -o wrkx ./wrkx
    - 必须指定并发数或QPS中的一个
    - QPS模式下必须指定大于0的max-workers参数
 
-2. 请求来源相关：
+2. HTTP方法和头部相关：
+   - `--method` 支持所有标准HTTP方法：GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS等
+   - `--header` 参数格式为 `key1:value1,key2:value2`，多个头部用逗号分隔
+   - 工具会自动设置 `Content-Type: application/json` 头部，除非在 `--header` 中重新指定
+   - 如果 `--header` 中指定的头部与默认头部冲突，`--header` 中的值会覆盖默认值
+
+3. 请求来源相关：
    - 使用 `--request` 时，`--file` 和 `--req-template` 必须为空
    - 使用 `--req-template` 时：
      - 必须同时指定 `--file` 参数
