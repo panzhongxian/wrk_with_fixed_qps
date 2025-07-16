@@ -47,8 +47,26 @@ func NewTplGenerator(filePath string, template string) (*TplGenerator, error) {
 		}
 		defer file.Close()
 
-		// Read CSV file
+		// 自动判断分隔符
 		reader := csv.NewReader(file)
+		peekHeader, err := reader.Read()
+		if err != nil {
+			return nil, fmt.Errorf("error reading header from CSV file %s: %v", path, err)
+		}
+		sep := ','
+		headerLine := strings.Join(peekHeader, ",")
+		if strings.Contains(headerLine, "\t") {
+			sep = '\t'
+		}
+
+		// 重置文件指针
+		_, err = file.Seek(0, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to seek file %s: %v", path, err)
+		}
+
+		reader = csv.NewReader(file)
+		reader.Comma = sep
 		records, err := reader.ReadAll()
 		if err != nil {
 			return nil, fmt.Errorf("error reading CSV file %s: %v", path, err)
