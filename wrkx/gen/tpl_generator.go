@@ -68,6 +68,7 @@ func NewTplGenerator(filePath string, template string) (*TplGenerator, error) {
 		reader = csv.NewReader(file)
 		reader.Comma = sep
 		records, err := reader.ReadAll()
+		reader.LazyQuotes = true // 允许不规范的引号
 		if err != nil {
 			return nil, fmt.Errorf("error reading CSV file %s: %v", path, err)
 		}
