@@ -44,7 +44,7 @@ func createClient() *http.Client {
 		MaxConnsPerHost:        10000,            // 增加每个主机的最大连接数
 		IdleConnTimeout:        60 * time.Second, // 空闲连接超时时间
 		DisableCompression:     true,             // 禁用压缩
-		ResponseHeaderTimeout:  20 * time.Second, // 响应头超时时间
+		ResponseHeaderTimeout:  30 * time.Second, // 响应头超时时间
 		ExpectContinueTimeout:  2 * time.Second,  // 100-continue超时时间
 		DialContext:            DialWithCache,    // 使用DNS缓存
 		TLSHandshakeTimeout:    10 * time.Second, // TLS握手超时时间
@@ -55,7 +55,7 @@ func createClient() *http.Client {
 
 	return &http.Client{
 		Transport: transport,
-		Timeout:   10 * time.Second,
+		// 移除全局超时，使用 context 控制单个请求超时
 	}
 }
 
@@ -138,6 +138,12 @@ func (w *Worker) makeRequest() {
 	}
 
 	start := time.Now()
+
+	// 使用 context 控制单个请求的超时
+	ctx, cancel := context.WithTimeout(context.Background(), w.timeout)
+	defer cancel()
+
+	req = req.WithContext(ctx)
 	resp, err := client.Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
