@@ -5,13 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"git.woa.com/jasonzxpan/wrk_server/wrkx/gen"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"git.woa.com/jasonzxpan/wrk_server/wrkx/gen"
 )
 
 type Worker struct {
@@ -117,20 +118,20 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 func (w *Worker) makeRequest() {
 	jsonBody, err := w.generator.Generate()
 	if err != nil {
-		atomic.AddInt64(&w.stats.FailedRequests, 1)
+		w.stats.RecordError()
 		return
 	}
 
 	req, err := http.NewRequest(w.method, w.url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		fmt.Printf("创建请求失败: %v\n", err)
-		atomic.AddInt64(&w.stats.FailedRequests, 1)
+		w.stats.RecordError()
 		return
 	}
-	
+
 	// 设置默认的Content-Type头部
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	// 设置用户指定的额外头部
 	for key, value := range w.headers {
 		req.Header.Set(key, value)
@@ -143,7 +144,7 @@ func (w *Worker) makeRequest() {
 			atomic.AddInt64(&w.stats.TimeoutRequests, 1)
 		}
 		fmt.Printf("请求失败: %v\n", err)
-		atomic.AddInt64(&w.stats.FailedRequests, 1)
+		w.stats.RecordError()
 		return
 	}
 	body, err := io.ReadAll(resp.Body)
@@ -153,7 +154,7 @@ func (w *Worker) makeRequest() {
 	// 检查响应状态码
 	if resp.StatusCode != http.StatusOK {
 		fmt.Printf("请求返回非200状态码: %d, 请求体: %s\n", resp.StatusCode, string(jsonBody))
-		atomic.AddInt64(&w.stats.FailedRequests, 1)
+		w.stats.RecordError()
 		return
 	}
 
@@ -279,7 +280,7 @@ func (w *Worker) qpsWorker() {
 				default:
 					// 通道已满，跳过这个请求
 					fmt.Printf("Channel is full (len: %d), skip this request\n", len(requestChan))
-					atomic.AddInt64(&w.stats.FailedRequests, 1)
+					w.stats.RecordError()
 				}
 			}
 		}

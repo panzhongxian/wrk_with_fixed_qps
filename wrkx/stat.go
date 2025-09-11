@@ -5,18 +5,20 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type RequestStats struct {
-	TotalRequests   int64
-	FailedRequests  int64
-	TimeoutRequests int64
-	TotalLatency    time.Duration
-	MinLatency      time.Duration
-	MaxLatency      time.Duration
-	RequestsPerSec  float64
-	TotalBytes      int64
+	TotalRequests      int64
+	FailedRequests     int64
+	IntervalErrorCount int64 // 区间内错误数，每次收集统计后重置为0
+	TimeoutRequests    int64
+	TotalLatency       time.Duration
+	MinLatency         time.Duration
+	MaxLatency         time.Duration
+	RequestsPerSec     float64
+	TotalBytes         int64
 	// 用于计算分位数的延迟数组
 	Latencies []time.Duration
 	mu        sync.Mutex
@@ -30,6 +32,12 @@ type SecondStats struct {
 	P75Latency   time.Duration
 	P90Latency   time.Duration
 	P99Latency   time.Duration
+}
+
+// RecordError 记录错误请求
+func (rs *RequestStats) RecordError() {
+	atomic.AddInt64(&rs.FailedRequests, 1)     // 总错误数
+	atomic.AddInt64(&rs.IntervalErrorCount, 1) // 区间错误数
 }
 
 // PrintStats 打印请求统计信息
@@ -134,6 +142,16 @@ func (c *SecondStatsCollector) RecordLatency(latency time.Duration) {
 	c.stats.mu.Unlock()
 }
 
+// RecordError 记录错误请求
+func (c *SecondStatsCollector) RecordError() {
+	if !c.enabled {
+		return
+	}
+
+	atomic.AddInt64(&c.stats.FailedRequests, 1)     // 总错误数
+	atomic.AddInt64(&c.stats.IntervalErrorCount, 1) // 区间错误数
+}
+
 // collectStats 收集当前秒的统计信息
 func (c *SecondStatsCollector) collectStats() *SecondStats {
 	c.stats.mu.Lock()
@@ -158,15 +176,16 @@ func (c *SecondStatsCollector) collectStats() *SecondStats {
 	stats := &SecondStats{
 		Timestamp:    time.Now(),
 		RequestCount: int64(len(c.stats.Latencies)),
-		ErrorCount:   c.stats.FailedRequests,
+		ErrorCount:   atomic.LoadInt64(&c.stats.IntervalErrorCount), // 使用区间错误数
 		AvgLatency:   avgLatency,
 		P75Latency:   p75,
 		P90Latency:   p90,
 		P99Latency:   p99,
 	}
 
-	// 清空延迟数组，准备下一秒的统计
+	// 清空延迟数组和区间错误数，准备下一秒的统计
 	c.stats.Latencies = c.stats.Latencies[:0]
+	atomic.StoreInt64(&c.stats.IntervalErrorCount, 0) // 重置区间错误数
 
 	return stats
 }
