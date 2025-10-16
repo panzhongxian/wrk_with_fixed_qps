@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.woa.com/jasonzxpan/wrk_server/wrkx/gen"
+	"github.com/panzhongxian/wrkx/wrkx/gen"
 )
 
 type Worker struct {

@@ -1,4 +1,4 @@
-module git.woa.com/jasonzxpan/wrk_server
+module github.com/panzhongxian/wrkx
 
 go 1.23.5
 

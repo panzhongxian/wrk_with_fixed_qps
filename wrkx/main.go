@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"git.woa.com/jasonzxpan/wrk_server/wrkx/gen"
+	"github.com/panzhongxian/wrkx/wrkx/gen"
 )
 
 // isIPAvailable 检查指定的IP地址是否可用
