@@ -22,7 +22,7 @@
 项目采用标准的Go项目布局，分为以下主要目录：
 
 ```
-wrk_with_fixed_qps/
+wrkx/
 ├── cmd/                    # 可执行程序入口
 │   ├── server/            # HTTP测试服务器
 │   │   ├── main.go        # 服务器程序入口，提供延迟测试接口
