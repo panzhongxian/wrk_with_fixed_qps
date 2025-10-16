@@ -3,13 +3,52 @@ package main
 import (
 	"flag"
 	"fmt"
-	"git.woa.com/jasonzxpan/wrk_server/wrkx/gen"
 	"math/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"git.woa.com/jasonzxpan/wrk_server/wrkx/gen"
 )
+
+// isIPAvailable 检查指定的IP地址是否可用
+func isIPAvailable(ip string) bool {
+	// 解析IP地址
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return false
+	}
+
+	// 获取所有网络接口
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+
+	// 检查IP是否属于任何网络接口
+	for _, iface := range interfaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ifaceIP net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ifaceIP = v.IP
+			case *net.IPAddr:
+				ifaceIP = v.IP
+			}
+			if ifaceIP != nil && ifaceIP.Equal(parsedIP) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
 
 func main() {
 	var (
@@ -25,6 +64,7 @@ func main() {
 		request           string
 		method            string
 		headers           string
+		srcIP             string
 	)
 
 	flag.StringVar(&url, "url", "http://localhost:8080/delay", "测试目标URL")
@@ -39,6 +79,7 @@ func main() {
 	flag.StringVar(&request, "request", "", "请求体字符串，如果指定则file和req-template必须为空")
 	flag.StringVar(&method, "method", "POST", "HTTP请求方法")
 	flag.StringVar(&headers, "header", "", "额外的HTTP头部，格式为key1:value1,key2:value2")
+	flag.StringVar(&srcIP, "src-ip", "", "指定源IP地址，用于绑定网络连接")
 
 	// 检查是否有未定义的参数
 	flag.Usage = func() {
@@ -90,6 +131,9 @@ func main() {
 	fmt.Printf("  超时时间: %.3f秒\n", timeout)
 	fmt.Printf("  最大并发数: %d\n", maxWorkers)
 	fmt.Printf("  每秒统计: %v\n", enableSecondStats)
+	if srcIP != "" {
+		fmt.Printf("  源IP地址: %s\n", srcIP)
+	}
 
 	if request != "" {
 		fmt.Printf("  请求体: %s\n", request)
@@ -119,6 +163,19 @@ func main() {
 	if request != "" && (file != "" || reqTemplate != "") {
 		fmt.Println("错误：使用 --request 参数时，--file 和 --req-template 必须为空")
 		return
+	}
+
+	// 验证src-ip参数
+	if srcIP != "" {
+		if net.ParseIP(srcIP) == nil {
+			fmt.Printf("错误：无效的IP地址 %s\n", srcIP)
+			return
+		}
+		// 检查IP地址是否可用
+		if !isIPAvailable(srcIP) {
+			fmt.Printf("错误：IP地址 %s 不可用或不存在于本机\n", srcIP)
+			return
+		}
 	}
 
 	// 验证文件相关参数
@@ -174,7 +231,7 @@ func main() {
 		reqGenerator = gen.NewCustomRequestGenerator()
 	}
 
-	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout*1000)*time.Millisecond, qps, reqGenerator, enableSecondStats, method, headers)
+	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout*1000)*time.Millisecond, qps, reqGenerator, enableSecondStats, method, headers, srcIP)
 	worker.maxWorkers = int32(maxWorkers)
 
 	fmt.Printf("开始压测...\n")

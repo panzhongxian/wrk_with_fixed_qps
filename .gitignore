@@ -3,3 +3,4 @@ stats.csv
 server/server
 *.csv
 wrkx/wrkx
+.DS_Store

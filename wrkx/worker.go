@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -34,23 +35,74 @@ type Worker struct {
 	// HTTP请求相关
 	method  string
 	headers map[string]string
+	srcIP   string
+	client  *http.Client
+}
+
+// createDialContext 创建一个支持指定source IP和DNS缓存的DialContext
+func createDialContext(srcIP string) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+
+		// 使用DNS缓存查找IP
+		ips, err := dnsCache.LookupHost(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+
+		// 尝试连接所有IP地址，最多重试3次
+		maxRetries := 3
+		var lastErr error
+		for retry := 0; retry < maxRetries; retry++ {
+			for _, ip := range ips {
+				dialer := &net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}
+
+				// 如果指定了source IP，则使用它
+				if srcIP != "" {
+					localAddr, err := net.ResolveIPAddr("ip", srcIP)
+					if err != nil {
+						return nil, fmt.Errorf("无法解析source IP %s: %v", srcIP, err)
+					}
+					dialer.LocalAddr = localAddr
+				}
+
+				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+				if err == nil {
+					return conn, nil
+				}
+				lastErr = err
+				// 如果还有重试机会，等待一段时间再重试
+				if retry < maxRetries-1 {
+					time.Sleep(time.Duration(retry+1) * 500 * time.Millisecond)
+				}
+			}
+		}
+
+		return nil, fmt.Errorf("failed after %d retries, last error: %v", maxRetries, lastErr)
+	}
 }
 
 // createClient 创建一个新的HTTP客户端
-func createClient() *http.Client {
+func createClient(srcIP string) *http.Client {
 	transport := &http.Transport{
-		MaxIdleConns:           10000,            // 增加最大空闲连接数
-		MaxIdleConnsPerHost:    10000,            // 增加每个主机的最大空闲连接数
-		MaxConnsPerHost:        10000,            // 增加每个主机的最大连接数
-		IdleConnTimeout:        60 * time.Second, // 空闲连接超时时间
-		DisableCompression:     true,             // 禁用压缩
-		ResponseHeaderTimeout:  30 * time.Second, // 响应头超时时间
-		ExpectContinueTimeout:  2 * time.Second,  // 100-continue超时时间
-		DialContext:            DialWithCache,    // 使用DNS缓存
-		TLSHandshakeTimeout:    10 * time.Second, // TLS握手超时时间
-		MaxResponseHeaderBytes: 4096,             // 限制响应头大小
-		WriteBufferSize:        4096,             // 写缓冲区大小
-		ReadBufferSize:         4096,             // 读缓冲区大小
+		MaxIdleConns:           10000,                    // 增加最大空闲连接数
+		MaxIdleConnsPerHost:    10000,                    // 增加每个主机的最大空闲连接数
+		MaxConnsPerHost:        10000,                    // 增加每个主机的最大连接数
+		IdleConnTimeout:        60 * time.Second,         // 空闲连接超时时间
+		DisableCompression:     true,                     // 禁用压缩
+		ResponseHeaderTimeout:  30 * time.Second,         // 响应头超时时间
+		ExpectContinueTimeout:  2 * time.Second,          // 100-continue超时时间
+		DialContext:            createDialContext(srcIP), // 使用指定的source IP
+		TLSHandshakeTimeout:    10 * time.Second,         // TLS握手超时时间
+		MaxResponseHeaderBytes: 4096,                     // 限制响应头大小
+		WriteBufferSize:        4096,                     // 写缓冲区大小
+		ReadBufferSize:         4096,                     // 读缓冲区大小
 	}
 
 	return &http.Client{
@@ -59,9 +111,7 @@ func createClient() *http.Client {
 	}
 }
 
-var client = createClient()
-
-func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator gen.RequestGenerator, enableSecondStats bool, method string, headers string) *Worker {
+func NewWorker(url string, concurrency int, duration time.Duration, timeout time.Duration, qps int, generator gen.RequestGenerator, enableSecondStats bool, method string, headers string, srcIP string) *Worker {
 	// 根据QPS动态调整最大并发数
 	maxWorkers := int32(1000)
 	if qps > 0 {
@@ -97,6 +147,9 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 		}
 	}
 
+	// 创建HTTP客户端
+	client := createClient(srcIP)
+
 	return &Worker{
 		url:            url,
 		concurrency:    concurrency,
@@ -112,6 +165,8 @@ func NewWorker(url string, concurrency int, duration time.Duration, timeout time
 		statsCollector: statsCollector,
 		method:         method,
 		headers:        headersMap,
+		srcIP:          srcIP,
+		client:         client,
 	}
 }
 
@@ -144,7 +199,7 @@ func (w *Worker) makeRequest() {
 	defer cancel()
 
 	req = req.WithContext(ctx)
-	resp, err := client.Do(req)
+	resp, err := w.client.Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			atomic.AddInt64(&w.stats.TimeoutRequests, 1)

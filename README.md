@@ -63,6 +63,7 @@ go build -o wrkx ./wrkx
 - `--header`: 额外的HTTP头部，格式为key1:value1,key2:value2（可选）
 - `--duration`: 测试持续时间，单位秒（默认：30）
 - `--timeout`: 请求超时时间，单位秒（默认：5）
+- `--src-ip`: 指定源IP地址，用于绑定网络连接（可选）
 - `--enable-second-stats`: 是否记录每秒的统计信息（不需要指定值，使用该参数即表示启用）
 
 #### 请求来源参数（三选一）
@@ -99,6 +100,11 @@ go build -o wrkx ./wrkx
 3. 组合使用不同方法和头部：
 ```bash
 ./wrkx --url http://localhost:8080/api --method PUT --header "Content-Type:application/xml,Authorization:Bearer token" --qps 100
+```
+
+4. 使用指定的源IP地址：
+```bash
+./wrkx --url http://localhost:8080/api --src-ip 192.168.1.100 --qps 100
 ```
 
 #### 请求来源选择
@@ -142,6 +148,13 @@ go build -o wrkx ./wrkx
      - CSV文件的第一行必须是表头
      - 模板中使用的所有变量名必须在CSV表头中存在
      - CSV文件的每一行数据列数必须与表头列数相同
+
+4. 源IP地址相关：
+   - `--src-ip` 参数用于指定HTTP请求的源IP地址
+   - 程序会验证IP地址格式是否正确
+   - 程序会检查IP地址是否存在于本机网络接口
+   - 如果IP地址无效或不存在，程序会报错并退出
+   - 适用于多网卡环境或需要模拟特定IP来源的场景
 
 ### 压测模式
 
@@ -187,6 +200,7 @@ go build -o wrkx ./wrkx
 QPS: 1000, 持续时间: 30秒
 最大并发数: 200
 请求超时: 5秒
+源IP地址: 192.168.1.100
 
 压测结果:
 总请求数: 30000
