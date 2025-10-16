@@ -65,7 +65,21 @@ func createDialContext(srcIP string) func(ctx context.Context, network, addr str
 
 				// 如果指定了source IP，则使用它
 				if srcIP != "" {
-					localAddr, err := net.ResolveIPAddr("ip", srcIP)
+					// 根据网络类型创建正确的本地地址
+					var localAddr net.Addr
+					var err error
+
+					if network == "tcp" || network == "tcp4" || network == "tcp6" {
+						// 对于TCP连接，需要指定端口为0让系统自动分配
+						localAddr, err = net.ResolveTCPAddr(network, srcIP+":0")
+					} else if network == "udp" || network == "udp4" || network == "udp6" {
+						// 对于UDP连接
+						localAddr, err = net.ResolveUDPAddr(network, srcIP+":0")
+					} else {
+						// 对于其他网络类型，使用IP地址
+						localAddr, err = net.ResolveIPAddr("ip", srcIP)
+					}
+
 					if err != nil {
 						return nil, fmt.Errorf("无法解析source IP %s: %v", srcIP, err)
 					}
