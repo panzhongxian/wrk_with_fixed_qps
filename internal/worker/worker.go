@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/panzhongxian/wrkx/wrkx/gen"
+	"github.com/panzhongxian/wrkx/internal/gen"
 )
 
 type Worker struct {
@@ -392,4 +392,14 @@ func (w *Worker) Start() {
 
 	// 停止统计收集器
 	w.statsCollector.Stop()
+}
+
+// SetMaxWorkers 设置最大工作协程数
+func (w *Worker) SetMaxWorkers(maxWorkers int32) {
+	w.maxWorkers = maxWorkers
+}
+
+// GetStats 获取统计信息
+func (w *Worker) GetStats() *RequestStats {
+	return w.stats
 }

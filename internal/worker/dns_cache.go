@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"context"
@@ -78,7 +78,7 @@ func DialWithCache(ctx context.Context, network, addr string) (net.Conn, error) 
 	for retry := 0; retry < maxRetries; retry++ {
 		for _, ip := range ips {
 			conn, err := (&net.Dialer{
-				Timeout:   5 * time.Second,    // 增加超时时间到5秒
+				Timeout:   5 * time.Second, // 增加超时时间到5秒
 				KeepAlive: 30 * time.Second,
 			}).DialContext(ctx, network, net.JoinHostPort(ip, port))
 			if err == nil {
@@ -93,4 +93,4 @@ func DialWithCache(ctx context.Context, network, addr string) (net.Conn, error) 
 	}
 
 	return nil, fmt.Errorf("failed after %d retries, last error: %v", maxRetries, lastErr)
-} 
+}

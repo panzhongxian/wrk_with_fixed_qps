@@ -22,29 +22,113 @@
 - 支持从CSV文件生成请求体（使用模板）
 - 支持WEB UI页面
 
-## 代码组织
+## 项目结构
 
-wrkx 目录为工具的代码目录，分为以下主要文件：
+项目采用标准的Go项目布局，分为以下主要目录：
 
-- `main.go`: 包含参数处理，启动压测
-- `worker.go`: 包含主要的压测逻辑，管理 HTTP 客户端和请求处理
-- `stat.go`: 统计信息收集和报告
-- `generator.go`: 包含请求生成相关的代码
+### 目录结构
+```
+wrk_with_fixed_qps/
+├── cmd/                    # 可执行程序入口
+│   ├── server/            # HTTP测试服务器
+│   │   ├── main.go        # 服务器程序入口
+│   │   └── README.md      # 服务器说明文档
+│   └── wrkx/              # 压测工具
+│       └── main.go        # 压测工具程序入口
+├── internal/              # 内部包（不对外暴露）
+│   ├── counter/           # 计数器逻辑
+│   │   └── counter.go     # 请求计数和Redis统计
+│   ├── gen/               # 请求生成器
+│   │   ├── generator.go   # 请求生成器接口和基础实现
+│   │   ├── file_generator.go    # 从文件读取请求体
+│   │   └── tpl_generator.go     # 从CSV模板生成请求体
+│   └── worker/            # 压测工作器
+│       ├── worker.go      # 主要的压测逻辑和HTTP客户端管理
+│       ├── stat.go       # 统计信息收集和报告
+│       └── dns_cache.go  # DNS缓存实现
+├── ui/                    # Web UI界面
+├── images/                # 项目图片资源
+└── README.md              # 项目说明文档
+```
+
+### 核心组件
+
+#### 压测工具 (`cmd/wrkx/`)
+- `main.go`: 程序入口，包含命令行参数处理和压测启动逻辑
+
+#### 计数器 (`internal/counter/`)
+- `counter.go`: 请求计数器，支持Redis统计和连接数监控
+
+#### 请求生成器 (`internal/gen/`)
+- `generator.go`: 定义请求生成器接口和基础实现
     - `RequestGenerator` 接口：定义请求生成的标准接口
     - `SimpleRequestGenerator`: 生成简单测试请求
     - `CustomRequestGenerator`: 使用预定义请求列表的生成器
-- `file_generator.go`: 从文件读取请求体的生成器
-- `tpl_generator.go`: 从CSV文件生成请求体的生成器
-- `client_pool.go`: HTTP 客户端连接池管理
-- `dns_cache.go`: DNS 缓存实现
+- `file_generator.go`: 从文件循环读取内容的生成器
+- `tpl_generator.go`: 从CSV文件生成请求体的模板生成器
+
+#### 压测工作器 (`internal/worker/`)
+- `worker.go`: 包含主要的压测逻辑，管理HTTP客户端和请求处理
+- `stat.go`: 统计信息收集和报告，支持秒级统计
+- `dns_cache.go`: DNS缓存实现，提高连接性能
+
+#### 测试服务器 (`cmd/server/`)
+- `main.go`: HTTP测试服务器，提供延迟测试接口
+
+### 架构设计
+
+项目采用分层架构设计，遵循Go语言的最佳实践：
+
+1. **入口层 (`cmd/`)**: 只包含程序入口逻辑，负责参数解析和程序启动
+2. **业务逻辑层 (`internal/`)**: 包含所有核心业务逻辑，不对外暴露
+3. **资源层**: 包含UI界面、图片等静态资源
+
+**设计优势**:
+- 清晰的职责分离，便于维护和测试
+- 内部包不对外暴露，可以安全重构
+- 符合Go社区标准，便于团队协作
+- 支持独立编译和部署
 
 ## 编译
 
+### 编译压测工具
 ```bash
-go build -o wrkx ./wrkx
+go build -o wrkx ./cmd/wrkx
+```
+
+### 编译测试服务器
+```bash
+go build -o server ./cmd/server
+```
+
+### 同时编译所有程序
+```bash
+# 编译压测工具
+go build -o bin/wrkx ./cmd/wrkx
+
+# 编译测试服务器
+go build -o bin/server ./cmd/server
 ```
 
 ## 使用方法
+
+### 启动测试服务器
+
+首先启动测试服务器（可选，用于测试压测工具）：
+
+```bash
+# 启动服务器
+./server
+
+# 或者使用go run
+go run ./cmd/server
+```
+
+服务器将在 `http://localhost:8080` 启动，提供以下接口：
+- `POST /delay`: 延迟测试接口
+- `GET /stats`: 查看当前统计信息
+
+### 使用压测工具
 
 ```bash
 ./wrkx [选项]
@@ -227,3 +311,56 @@ cd ui && python app.py
 浏览器访问<http://127.0.0.1:8081/> 即可开始压测：
 
 ![web-ui](images/webui.png)
+
+## 开发说明
+
+### 项目结构说明
+
+本项目采用标准的Go项目布局，主要特点：
+
+1. **`cmd/` 目录**: 包含所有可执行程序的入口点
+   - `cmd/wrkx/`: 压测工具主程序
+   - `cmd/server/`: 测试服务器程序
+
+2. **`internal/` 目录**: 包含项目的内部包，不对外暴露
+   - `internal/counter/`: 计数器相关逻辑
+   - `internal/gen/`: 请求生成器
+   - `internal/worker/`: 压测工作器
+
+3. **`ui/` 目录**: Web UI界面相关文件
+
+### 开发环境设置
+
+```bash
+# 克隆项目
+git clone <repository-url>
+cd wrk_with_fixed_qps
+
+# 安装依赖
+go mod tidy
+
+# 运行测试
+go test ./...
+
+# 编译所有程序
+go build -o bin/wrkx ./cmd/wrkx
+go build -o bin/server ./cmd/server
+```
+
+### 添加新功能
+
+1. 业务逻辑应添加到 `internal/` 目录下的相应包中
+2. 程序入口逻辑应添加到 `cmd/` 目录下
+3. 遵循Go的包命名和接口设计规范
+
+### 测试
+
+```bash
+# 运行所有测试
+go test ./...
+
+# 运行特定包的测试
+go test ./internal/counter
+go test ./internal/worker
+go test ./internal/gen
+```

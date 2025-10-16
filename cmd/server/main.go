@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/panzhongxian/wrkx/pkg/counter"
+	"github.com/panzhongxian/wrkx/internal/counter"
 )
 
 type DelayRequest struct {

@@ -1,6 +1,8 @@
 .idea
 stats.csv
-server/server
+cmd/server/server
 *.csv
-wrkx/wrkx
+cmd/wrkx/wrkx
 .DS_Store
+wrkx
+server

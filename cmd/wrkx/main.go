@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/panzhongxian/wrkx/wrkx/gen"
+	"github.com/panzhongxian/wrkx/internal/gen"
+	"github.com/panzhongxian/wrkx/internal/worker"
 )
 
 // isIPAvailable 检查指定的IP地址是否可用
@@ -231,11 +232,11 @@ func main() {
 		reqGenerator = gen.NewCustomRequestGenerator()
 	}
 
-	worker := NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout*1000)*time.Millisecond, qps, reqGenerator, enableSecondStats, method, headers, srcIP)
-	worker.maxWorkers = int32(maxWorkers)
+	w := worker.NewWorker(url, concurrency, time.Duration(duration)*time.Second, time.Duration(timeout*1000)*time.Millisecond, qps, reqGenerator, enableSecondStats, method, headers, srcIP)
+	w.SetMaxWorkers(int32(maxWorkers))
 
 	fmt.Printf("开始压测...\n")
 
-	worker.Start()
-	worker.stats.PrintStats()
+	w.Start()
+	w.GetStats().PrintStats()
 }
